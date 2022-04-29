@@ -21,6 +21,8 @@ def analyze(compile_output, contract_graph, contract_facts, *, output_dir):
 
     # The output must be either 'Tainted' or 'Safe':
     print("Tainted" if facts_out['tainted_sinks'] else "Safe")
+    #print(output)
+    print(facts_out)
 
 
 def visualize(compile_output, contract_graph, contract_facts, *, output_dir):

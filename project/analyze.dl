@@ -122,7 +122,42 @@ msgSender(id) :- builtinVariable(id, "SENDER").
 // -- output relations --
 .decl tainted_sinks(id: SSA)
 
+.decl sources(id: SSA) // mix argument and statement IDs
+.decl sinks(id: SSA)
+.decl blocksWithBranch(id_block: Block) // blocks that contain a branch and blocks that come from a branch
+.decl untrustedBlocks1(id_block: Block) // block untrusted at the beginning: they contain an untrusted statement, and they are not in `blockWithBranch`, so no potential guard could save them
+.decl unstrustedStateVariables1(field: Name) // state variables (fields) that are affected a tainted value in untrustedBlocks1
+
 // Your code goes here...
 tainted_sinks(id) :- selfdestruct(id,_).
 
+sources(id) :- builtinVariable(id,_).
+sources(id) :- argument(id,_,_).
+
+sinks(id) :- selfdestruct(id,_).
+
+blocksWithBranch(id_block) :- branch(_,_,id_block,_,_,_).
+blocksWithBranch(id_block) :- branch(_,_,_,id_block,_,_).
+blocksWithBranch(id_block) :- branch(_,_,_,_,id_block,_).
+
+untrustedBlocks1(id_block) :- blockStmt(id_block, id_stmt), builtinVariable(id_stmt,_), !blocksWithBranch(id_block).
+untrustedBlocks1(id_block) :- argument(_,id_block,_), !blocksWithBranch(id_block).
+
+unstrustedStateVariables1(field) :- store(id_stmt, field, id_attributed_stmt), sources(id_attributed_stmt), blockStmt(id_block, id_stmt), untrustedBlocks1(id_block).
+
+
+
+
 .output tainted_sinks
+.output sources
+//.output sinks
+.output blocksWithBranch
+.output untrustedBlocks1
+.output unstrustedStateVariables1
+
+
+
+// .output selfdestruct
+// .output argument
+// .output builtinVariable
+//.output store

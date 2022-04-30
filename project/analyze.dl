@@ -136,7 +136,9 @@ msgSender(id) :- builtinVariable(id, "SENDER").
 .decl untrustedBlocks1(id_block: Block) // block untrusted at the beginning: they contain an untrusted statement, and they are not in `blocksWithPotentialGuard`, so no potential guard could save them
 .decl untrustedVariables1(id: SSA) // statements that are untrusted at this level: sources & variables derived from sources before a potential guard
 .decl untrustedStateVariables1(field: Name) // state variables (fields) that are affected a tainted value in untrustedBlocks1
-
+.decl loadedVariables1(id: SSA)
+.decl untrustedVariables2(id: SSA)
+.decl actualGuards(id_stmt: SSA)
 
 //_________________________________________________________
 // LOGIC IMPLEMENTATION
@@ -188,7 +190,15 @@ untrustedVariables1(id) :- untrustedBlocks1(id_block), blockStmt(id_block, id), 
 
 untrustedStateVariables1(field) :- store(id_stmt, field, id_attributed_stmt), untrustedVariables1(id_attributed_stmt), blockStmt(id_block, id_stmt), untrustedBlocks1(id_block).
 
+// 5. Identify local variables coming from untrustedStateVariables1, that are therefore untrusted
+loadedVariables1(id) :- load(id, field), untrustedStateVariables1(field).
+loadedVariables1(id) :- derivesFrom(id,id_2), loadedVariables1(id_2).
 
+untrustedVariables2(id) :- untrustedVariables1(id).
+untrustedVariables2(id) :- loadedVariables1(id).
+
+// 6. Obtain actual guards from the previous potential guards
+actualGuards(id_stmt) :- potentialGuards(id_stmt), !untrustedVariables2(id_stmt).
 
 //_________________________________________________________
 // OUTPUT
@@ -203,6 +213,9 @@ untrustedStateVariables1(field) :- store(id_stmt, field, id_attributed_stmt), un
 .output untrustedBlocks1
 .output untrustedVariables1
 .output untrustedStateVariables1
+//.output loadedVariables1
+.output untrustedVariables2
+.output actualGuards
 
 
 

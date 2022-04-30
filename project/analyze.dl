@@ -119,16 +119,43 @@
 .decl msgSender(id: SSA)
 msgSender(id) :- builtinVariable(id, "SENDER").
 
-// -- output relations --
+//_________________________________________________________
+// OUTPUT RELATIONS
+//_________________________________________________________
+
+.decl derivesFrom(id_derived: SSA, id_taint: SSA) // a variable id_derived comes from id_taint through recursive assignment/uop/bop
+.decl followsRecursively(id_stmt_1: SSA, id_stmt_0: SSA) // unused for the moment
+
 .decl tainted_sinks(id: SSA)
 
 .decl sources(id: SSA) // mix argument and statement IDs
 .decl sinks(id: SSA)
-.decl blocksWithBranch(id_block: Block) // blocks that contain a branch and blocks that come from a branch
-.decl untrustedBlocks1(id_block: Block) // block untrusted at the beginning: they contain an untrusted statement, and they are not in `blockWithBranch`, so no potential guard could save them
-.decl unstrustedStateVariables1(field: Name) // state variables (fields) that are affected a tainted value in untrustedBlocks1
+.decl containsSender(id_stmt: SSA) // statements that have the value "SENDER", or that recursively link to another statement that has the value "SENDER"
+.decl potentialGuards(id_stmt: SSA) // statements that are conditions (bop with "=="), and one side of the condition contains msg.sender
+.decl blocksWithPotentialGuard(id_block: Block) // blocks that could be potentially cleared by a guard (either containing the potential guard, or being after a block that contains one — through goto/branch/jump)
+.decl untrustedBlocks1(id_block: Block) // block untrusted at the beginning: they contain an untrusted statement, and they are not in `blocksWithPotentialGuard`, so no potential guard could save them
+.decl untrustedVariables1(id: SSA) // statements that are untrusted at this level: sources & variables derived from sources before a potential guard
+.decl untrustedStateVariables1(field: Name) // state variables (fields) that are affected a tainted value in untrustedBlocks1
 
-// Your code goes here...
+
+//_________________________________________________________
+// LOGIC IMPLEMENTATION
+//_________________________________________________________
+
+//0. Helper functions
+followsRecursively(id_stmt_1, id_stmt_0) :- follows(id_stmt_1, id_stmt_0).
+followsRecursively(id_stmt_1, id_stmt_0) :- follows(id_stmt_i, id_stmt_0), follows(id_stmt_1, id_stmt_i). 
+// TODO: add case where it follows through branches
+
+
+derivesFrom(id_derived, id_taint) :- assign(id_derived,id_taint).
+derivesFrom(id_derived, id_taint) :- uop(id_derived,id_taint,_).
+derivesFrom(id_derived, id_taint) :- bop(id_derived,id_taint,_,_).
+derivesFrom(id_derived, id_taint) :- bop(id_derived,_,id_taint,_).
+derivesFrom(id_derived, id_taint) :- derivesFrom(id_intermediary, id_taint), derivesFrom(id_derived, id_intermediary).//, !(const(id_intermediary,_), followsRecursively(id_taint,id_intermediary), followsRecursively(id_intermediary,id_derived)).
+
+
+// 1. Identify sources and sinks
 tainted_sinks(id) :- selfdestruct(id,_).
 
 sources(id) :- builtinVariable(id,_).
@@ -136,28 +163,53 @@ sources(id) :- argument(id,_,_).
 
 sinks(id) :- selfdestruct(id,_).
 
-blocksWithBranch(id_block) :- branch(_,_,id_block,_,_,_).
-blocksWithBranch(id_block) :- branch(_,_,_,id_block,_,_).
-blocksWithBranch(id_block) :- branch(_,_,_,_,id_block,_).
+// 2. Identify statements with conditions on "SENDER", meaning "potential guards"
+containsSender(id_stmt) :- builtinVariable(id_stmt,"SENDER").
+containsSender(id_stmt) :- assign(id_stmt,id_stmt2), containsSender(id_stmt2).
 
-untrustedBlocks1(id_block) :- blockStmt(id_block, id_stmt), builtinVariable(id_stmt,_), !blocksWithBranch(id_block).
-untrustedBlocks1(id_block) :- argument(_,id_block,_), !blocksWithBranch(id_block).
+potentialGuards(id_stmt) :- bop(id_stmt,id_stmt_c1,id_stmt_c2,"=="), containsSender(id_stmt_c1).
+potentialGuards(id_stmt) :- bop(id_stmt,id_stmt_c1,id_stmt_c2,"=="), containsSender(id_stmt_c2).
 
-unstrustedStateVariables1(field) :- store(id_stmt, field, id_attributed_stmt), sources(id_attributed_stmt), blockStmt(id_block, id_stmt), untrustedBlocks1(id_block).
+// 3. Identify all blocks that could be potentially cleared by a guard (once the condition is verified). Inversely, blocks not in this set contain statements that could never be cleared by a guard.
+blocksWithPotentialGuard(id_block) :- potentialGuards(id_stmt), blockStmt(id_block, id_stmt).
+blocksWithPotentialGuard(id_block) :- goto(_,id_block_guarded,id_block), blocksWithPotentialGuard(id_block_guarded).
+blocksWithPotentialGuard(id_block) :- branch(_,_,id_block_guarded,id_block,_,id_stmt_condition), blocksWithPotentialGuard(id_block_guarded), !potentialGuards(id_block_guarded).
+blocksWithPotentialGuard(id_block) :- branch(_,_,id_block_guarded,_,id_block,id_stmt_condition), blocksWithPotentialGuard(id_block_guarded), !potentialGuards(id_block_guarded).
+blocksWithPotentialGuard(id_block) :- jump(_,id_block_guarded,id_block,_), blocksWithPotentialGuard(id_block_guarded).
+blocksWithPotentialGuard(id_block) :- jump(_,id_block_guarded,_,id_block), blocksWithPotentialGuard(id_block_guarded).
+blocksWithPotentialGuard(id_block) :- jump(_,_,id_block_guarded,id_block), blocksWithPotentialGuard(id_block_guarded).
+
+// 4. Identify first variables, then state variables that are tainted (from blocks that we are sure are not guarded)
+untrustedBlocks1(id_block) :- blockStmt(id_block, id_stmt), builtinVariable(id_stmt,_), !blocksWithPotentialGuard(id_block).
+untrustedBlocks1(id_block) :- argument(_,id_block,_), !blocksWithPotentialGuard(id_block).
+
+untrustedVariables1(id) :- sources(id).
+untrustedVariables1(id) :- untrustedBlocks1(id_block), blockStmt(id_block, id), derivesFrom(id,id_2), untrustedVariables1(id_2). 
+
+untrustedStateVariables1(field) :- store(id_stmt, field, id_attributed_stmt), untrustedVariables1(id_attributed_stmt), blockStmt(id_block, id_stmt), untrustedBlocks1(id_block).
 
 
 
+//_________________________________________________________
+// OUTPUT
+//_________________________________________________________
 
 .output tainted_sinks
 .output sources
-//.output sinks
-.output blocksWithBranch
+// .output sinks
+// .output containsSender
+.output potentialGuards
+.output blocksWithPotentialGuard
 .output untrustedBlocks1
-.output unstrustedStateVariables1
+.output untrustedVariables1
+.output untrustedStateVariables1
+
 
 
 
 // .output selfdestruct
 // .output argument
 // .output builtinVariable
-//.output store
+// .output store
+// .output builtinVariable
+//.output derivesFrom

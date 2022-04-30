@@ -134,17 +134,20 @@ msgSender(id) :- builtinVariable(id, "SENDER").
 .decl potentialGuards(id_stmt: SSA) // statements that are conditions (bop with "=="), and one side of the condition contains msg.sender
 .decl blocksWithPotentialGuard(id_block: Block) // blocks that could be potentially cleared by a guard (either containing the potential guard, or being after a block that contains one — through goto/branch/jump)
 .decl untrustedBlocks1(id_block: Block) // block untrusted at the beginning: they contain an untrusted statement, and they are not in `blocksWithPotentialGuard`, so no potential guard could save them
-.decl untrustedVariables1(id: SSA) // statements that are untrusted at this level: sources & variables derived from sources before a potential guard
+.decl untrustedVariables1(id: SSA) // statements that are untrusted at this level: sources & variables derived from sources in blocks without potential guard
 .decl untrustedStateVariables1(field: Name) // state variables (fields) that are affected a tainted value in untrustedBlocks1
-.decl loadedVariables1(id: SSA)
-.decl untrustedVariables2(id: SSA)
-.decl actualGuards(id_stmt: SSA)
+.decl loadedVariables1(id: SSA) // unstrusted local variables loaded from untrustedStateVariables1
+.decl untrustedVariables2(id: SSA) // statements that are untrusted at this level: sources & variables derived from sources in blocks without potential guard & local variables loaded from unstrusted state variables
+.decl potentialGuardCalls(id_stmt_gard: SSA, id_arg: SSA) // a guard statement is in a block that can be called in different contexts: directly, or by another function. The distinction is important because the block argument is untrusted in a direct call, but in the case of the call by another function, it could be trusted, depending on the given argument. potentialGuardCalls groups guard statements with possible values of their block arguement.
+.decl unstrustedVariablesBeforeGuard(id: SSA, id_stmt_gard: SSA, id_arg_of_guard_block: SSA) // for each potentialGuardCalls, gives the unstrusted local variables in the block of the guard
+.decl invalidGuardCalls(id_stmt_gard: SSA, id_arg: SSA) // potential guards which are in fact not guards
+
 
 //_________________________________________________________
 // LOGIC IMPLEMENTATION
 //_________________________________________________________
 
-//0. Helper functions
+// 0. Helper functions
 followsRecursively(id_stmt_1, id_stmt_0) :- follows(id_stmt_1, id_stmt_0).
 followsRecursively(id_stmt_1, id_stmt_0) :- follows(id_stmt_i, id_stmt_0), follows(id_stmt_1, id_stmt_i). 
 // TODO: add case where it follows through branches
@@ -165,12 +168,14 @@ sources(id) :- argument(id,_,_).
 
 sinks(id) :- selfdestruct(id,_).
 
+
 // 2. Identify statements with conditions on "SENDER", meaning "potential guards"
 containsSender(id_stmt) :- builtinVariable(id_stmt,"SENDER").
 containsSender(id_stmt) :- assign(id_stmt,id_stmt2), containsSender(id_stmt2).
 
 potentialGuards(id_stmt) :- bop(id_stmt,id_stmt_c1,id_stmt_c2,"=="), containsSender(id_stmt_c1).
 potentialGuards(id_stmt) :- bop(id_stmt,id_stmt_c1,id_stmt_c2,"=="), containsSender(id_stmt_c2).
+
 
 // 3. Identify all blocks that could be potentially cleared by a guard (once the condition is verified). Inversely, blocks not in this set contain statements that could never be cleared by a guard.
 blocksWithPotentialGuard(id_block) :- potentialGuards(id_stmt), blockStmt(id_block, id_stmt).
@@ -181,6 +186,7 @@ blocksWithPotentialGuard(id_block) :- jump(_,id_block_guarded,id_block,_), block
 blocksWithPotentialGuard(id_block) :- jump(_,id_block_guarded,_,id_block), blocksWithPotentialGuard(id_block_guarded).
 blocksWithPotentialGuard(id_block) :- jump(_,_,id_block_guarded,id_block), blocksWithPotentialGuard(id_block_guarded).
 
+
 // 4. Identify first variables, then state variables that are tainted (from blocks that we are sure are not guarded)
 untrustedBlocks1(id_block) :- blockStmt(id_block, id_stmt), builtinVariable(id_stmt,_), !blocksWithPotentialGuard(id_block).
 untrustedBlocks1(id_block) :- argument(_,id_block,_), !blocksWithPotentialGuard(id_block).
@@ -189,6 +195,8 @@ untrustedVariables1(id) :- sources(id).
 untrustedVariables1(id) :- untrustedBlocks1(id_block), blockStmt(id_block, id), derivesFrom(id,id_2), untrustedVariables1(id_2). 
 
 untrustedStateVariables1(field) :- store(id_stmt, field, id_attributed_stmt), untrustedVariables1(id_attributed_stmt), blockStmt(id_block, id_stmt), untrustedBlocks1(id_block).
+untrustedStateVariables1(field) :- store(id_stmt, field, id_attributed_stmt), loadedVariables1(id_attributed_stmt), blockStmt(id_block, id_stmt), untrustedBlocks1(id_block). // this part is necessary to solve recurrent store/load of a same taint variable
+
 
 // 5. Identify local variables coming from untrustedStateVariables1, that are therefore untrusted
 loadedVariables1(id) :- load(id, field), untrustedStateVariables1(field).
@@ -197,25 +205,43 @@ loadedVariables1(id) :- derivesFrom(id,id_2), loadedVariables1(id_2).
 untrustedVariables2(id) :- untrustedVariables1(id).
 untrustedVariables2(id) :- loadedVariables1(id).
 
-// 6. Obtain actual guards from the previous potential guards
-actualGuards(id_stmt) :- potentialGuards(id_stmt), !untrustedVariables2(id_stmt).
+
+// 6. For each potential guard, create a scenario for each block call depending on the provided argument
+potentialGuardCalls(id_stmt_gard, id_arg) :- potentialGuards(id_stmt_gard), blockStmt(id_block,id_stmt_gard), argument(id_arg,id_block,_).
+potentialGuardCalls(id_stmt_gard, id_arg) :- potentialGuards(id_stmt_gard), blockStmt(id_block,id_stmt_gard), jump(id_transfer,_,id_block,_), transferArgument(id_transfer,id_arg,_).
+potentialGuardCalls(id_stmt_gard, id_arg) :- potentialGuardCalls(id_stmt_gard,id_arg_other), transferArgument(id_transfer_1,id_arg_other,_), jump(id_transfer_1,id_block_to,_,_), jump(id_transfer_2,id_block_from,id_block_to,_),  transferArgument(id_transfer_2,id_arg,_). // necessary if there are several embedded calls from the require to go up to the guard code (see recursiveRequireCall.sol)
+// TODO: are there other similar situations than with Jump?
+// TODO: what happens when there are several transferArguments? 
+
+
+// 7. We now have all unstrusted variables coming from completely unstrusted blocks, and loaded from state variables. We need to add local variables (and their derivatives) that are in potentially guarded blocks and happen before the guard. These variables are different than others, because if the guard condition is trusted, then these variables should also be trusted.
+unstrustedVariablesBeforeGuard(id, id_stmt_gard, id_arg_of_guard_block) :- potentialGuardCalls(id_stmt_gard, id_arg_of_guard_block), blockStmt(id_block, id_stmt_gard), untrustedVariables2(id),  blockStmt(id_block, id), !containsSender(id). // "!containsSender(id)" because we suppose here that we trust the sender, in order to see if the guard is tainted by something else (if it is not, then the guard is valid)
+unstrustedVariablesBeforeGuard(id_arg_generic, id_stmt_gard, id_arg_of_guard_block) :- potentialGuardCalls(id_stmt_gard, id_arg_of_guard_block), blockStmt(id_block, id_stmt_gard), argument(id_arg_generic,id_block,_), untrustedVariables2(id_arg_of_guard_block). // to know if the guard is valid with the argument id_arg_of_guard_block, we "replace" the generic argument of the bloc by it. So if id_arg_of_guard_block is unstrusted, we say that id_arg_generic is generic (because it is the argument id present in the guard)
+unstrustedVariablesBeforeGuard(id, id_stmt_gard, id_arg_of_guard_block) :- unstrustedVariablesBeforeGuard(id_2, id_stmt_gard, id_arg_of_guard_block), derivesFrom(id,id_2).
+
+
+// 8. Obtain invalid guard calls from the previous potential guards
+invalidGuardCalls(id_stmt_gard, id_arg) :- unstrustedVariablesBeforeGuard(id_stmt_gard, id_stmt_gard, id_arg).
+
 
 //_________________________________________________________
 // OUTPUT
 //_________________________________________________________
 
 .output tainted_sinks
-.output sources
+// .output sources
 // .output sinks
 // .output containsSender
 .output potentialGuards
-.output blocksWithPotentialGuard
-.output untrustedBlocks1
-.output untrustedVariables1
+// .output blocksWithPotentialGuard
+// .output untrustedBlocks1
+// .output untrustedVariables1
 .output untrustedStateVariables1
-//.output loadedVariables1
+// .output loadedVariables1
 .output untrustedVariables2
-.output actualGuards
+.output potentialGuardCalls
+// .output unstrustedVariablesBeforeGuard
+.output invalidGuardCalls
 
 
 

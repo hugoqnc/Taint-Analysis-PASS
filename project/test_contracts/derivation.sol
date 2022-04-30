@@ -3,6 +3,7 @@ pragma solidity ^0.5.0;
 contract Contract {
   int x;
   int y;
+  int z;
 
 //  function bar(int x) public {
 //    int a = 0;
@@ -19,7 +20,10 @@ contract Contract {
     int b = x;
     int c = b;
     y = c;
-    x = 0;
-    int d = x;
+    int d = y;
+    int e = d;
+    int f = e;
+    z = f;
+    int g = z;
   }
 }

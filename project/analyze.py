@@ -12,7 +12,7 @@ def analyze(compile_output, contract_graph, contract_facts, *, output_dir):
     # Optional: Use Datalog (Souffle).
 
     # Run the Datalog analyzer
-    datalog_analyzer = Path(__file__).parent / "analyze.dl"
+    datalog_analyzer = Path(__file__).parent / "analyzeRecursive.dl"
     output, facts_out = souffle.run_souffle(
         datalog_analyzer,
         facts=contract_facts,
@@ -22,7 +22,11 @@ def analyze(compile_output, contract_graph, contract_facts, *, output_dir):
     # The output must be either 'Tainted' or 'Safe':
     print("Tainted" if facts_out['tainted_sinks'] else "Safe")
     #print(output)
-    print(facts_out)
+    for key in facts_out:
+        max = 32
+        spacedKey = key + " "*(max-len(key)) + ":"
+        print(spacedKey, facts_out[key])
+    #print(facts_out)
 
 
 def visualize(compile_output, contract_graph, contract_facts, *, output_dir):

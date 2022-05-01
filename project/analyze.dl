@@ -124,18 +124,18 @@ msgSender(id) :- builtinVariable(id, "SENDER").
 //_________________________________________________________
 
 .decl tainted_sinks(id: SSA)
-.decl derivesFrom(id_derived: SSA, id_taint: SSA) 
-.decl containsSender(id_stmt: SSA)
-.decl potentialGuardConditions(id_stmt: SSA)
-.decl potentialGuards(id_stmt: SSA)
+.decl derivesFrom(id_derived: SSA, id_taint: SSA) // id_derived is obtained (recursively) with assign/uop/bop/selfdestruct explicit operations and branch/goto implicit operations from id_taint
+.decl containsSender(id_stmt: SSA) // statements that contain (recursively) "SENDER" or a value that derives from it
+.decl potentialGuardConditions(id_stmt: SSA) // statements that contain a condition that involves msg.sender
+.decl potentialGuards(id_stmt: SSA) // statements that could be a guard (branching on a condition that involves msg.sender), that we need to verify to know if they are actual guards or not
 
-.decl untrustedVariables(id: SSA, id_stmt_gard: SSA, id_arg_of_guard_block: SSA)
-.decl untrustedStateVariables(field: Name)
-.decl untrustedBlocks(id_block: Block, id_stmt_gard: SSA, id_arg_of_guard_block: SSA)
-.decl untrustedVariablesBeforeGuard(id: SSA, id_stmt_gard: SSA, id_arg_of_guard_block: SSA)
-.decl potentialGuardCalls(id_stmt_gard: SSA, id_arg: SSA)
-.decl invalidGuardCalls(id_stmt_gard: SSA, id_arg: SSA)
-.decl blocksWithPotentialGuard(id_block: Block, id_arg: SSA) 
+.decl potentialGuardCalls(id_stmt_gard: SSA, id_arg: SSA) // a guard statement is in a block that can be called in different contexts: directly, or by another function. The distinction is important because the block argument is untrusted in a direct call, but in the case of the call by another function, it could be trusted, depending on the given argument. potentialGuardCalls groups guard statements with possible values of their block arguement. If the block has no argument, we use "000"
+.decl untrustedVariables(id: SSA, id_stmt_gard: SSA, id_arg_of_guard_block: SSA) // id is an unstrusted variable in the context of the calling of a potential guard (id_stmt_gard, id_arg_of_guard_block). If we have (id, "000", "000"), then id is unstrusted in all contexts.
+.decl untrustedStateVariables(field: Name) // state variable that are unstrusted. If a state variable can be given an unstrusted value in a specific context, it becomes untrusted in all contexts (because it is a shared value).
+.decl untrustedBlocks(id_block: Block, id_stmt_gard: SSA, id_arg_of_guard_block: SSA) // id_block is an unstrusted block in the context of the calling of a potential guard (id_stmt_gard, id_arg_of_guard_block). This means that there is no guard can "save" the block, so we can derive untrusted values inside of it. If we have (id_block, "000", "000"), then id_block is unstrusted in all contexts.
+.decl untrustedVariablesBeforeGuard(id: SSA, id_stmt_gard: SSA, id_arg_of_guard_block: SSA) // when looking at a potential guard (id_stmt_gard, id_arg_of_guard_block), to evaluate it, we can use the untrustedVariables, but we also need to evaluate local variables in the same block as the potential guard and appearing before it. Untrusted variables from this set are grouped here.
+.decl invalidGuardCalls(id_stmt_gard: SSA, id_arg: SSA) // these are the potential guard calls that we have evaluated and that we are sure are not valid (they are therefore not guards in the given context)
+.decl blocksWithPotentialGuard(id_block: Block, id_arg: SSA)  // this is the set of blocks that potentially contain a guard, in the given
 
 //_________________________________________________________
 // LOGIC IMPLEMENTATION

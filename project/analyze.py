@@ -12,7 +12,7 @@ def analyze(compile_output, contract_graph, contract_facts, *, output_dir):
     # Optional: Use Datalog (Souffle).
 
     # Run the Datalog analyzer
-    datalog_analyzer = Path(__file__).parent / "analyzeRecursive.dl"
+    datalog_analyzer = Path(__file__).parent / "analyze.dl"
     output, facts_out = souffle.run_souffle(
         datalog_analyzer,
         facts=contract_facts,

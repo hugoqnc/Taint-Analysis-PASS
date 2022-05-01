@@ -133,15 +133,18 @@ msgSender(id) :- builtinVariable(id, "SENDER").
 .decl containsSender(id_stmt: SSA) // statements that have the value "SENDER", or that recursively link to another statement that has the value "SENDER"
 .decl potentialGuards(id_stmt: SSA) // statements that are conditions (bop with "=="), and one side of the condition contains msg.sender
 .decl blocksWithPotentialGuard(id_block: Block) // blocks that could be potentially cleared by a guard (either containing the potential guard, or being after a block that contains one — through goto/branch/jump)
-.decl untrustedBlocks1(id_block: Block) // block untrusted at the beginning: they contain an untrusted statement, and they are not in `blocksWithPotentialGuard`, so no potential guard could save them
+.decl untrustedBlocks1(id_block: Block) // blocks untrusted at the beginning: they contain an untrusted statement, and they are not in `blocksWithPotentialGuard`, so no potential guard could save them
 .decl untrustedVariables1(id: SSA) // statements that are untrusted at this level: sources & variables derived from sources in blocks without potential guard
 .decl untrustedStateVariables1(field: Name) // state variables (fields) that are affected a tainted value in untrustedBlocks1
 .decl loadedVariables1(id: SSA) // unstrusted local variables loaded from untrustedStateVariables1
 .decl untrustedVariables2(id: SSA) // statements that are untrusted at this level: sources & variables derived from sources in blocks without potential guard & local variables loaded from unstrusted state variables
 .decl potentialGuardCalls(id_stmt_gard: SSA, id_arg: SSA) // a guard statement is in a block that can be called in different contexts: directly, or by another function. The distinction is important because the block argument is untrusted in a direct call, but in the case of the call by another function, it could be trusted, depending on the given argument. potentialGuardCalls groups guard statements with possible values of their block arguement.
 .decl unstrustedVariablesBeforeGuard(id: SSA, id_stmt_gard: SSA, id_arg_of_guard_block: SSA) // for each potentialGuardCalls, gives the unstrusted local variables in the block of the guard
-.decl invalidGuardCalls(id_stmt_gard: SSA, id_arg: SSA) // potential guards which are in fact not guards
-
+.decl invalidGuardCalls(id_stmt_gard: SSA, id_arg: SSA) // potential guards which are in fact not guards (we are sure they will never become valid)
+.decl trustedGuardCalls(id_stmt_gard: SSA, id_arg: SSA) // guards that are, up to now, trusted (this may change when we will learn more info)
+.decl blocksWithTrustedGuardCall(id_block: Block, id_arg: SSA) // block containing a trusted guard call
+.decl untrustedBlocks2(id_block: Block, id_stmt_gard: SSA, id_arg_of_guard_block: SSA) // blocks unstrusted at this point, taking into account the invalid guards found up to now
+.decl untrustedVariables3(id: SSA)
 
 //_________________________________________________________
 // LOGIC IMPLEMENTATION
@@ -210,17 +213,40 @@ untrustedVariables2(id) :- loadedVariables1(id).
 potentialGuardCalls(id_stmt_gard, id_arg) :- potentialGuards(id_stmt_gard), blockStmt(id_block,id_stmt_gard), argument(id_arg,id_block,_).
 potentialGuardCalls(id_stmt_gard, id_arg) :- potentialGuards(id_stmt_gard), blockStmt(id_block,id_stmt_gard), jump(id_transfer,_,id_block,_), transferArgument(id_transfer,id_arg,_).
 potentialGuardCalls(id_stmt_gard, id_arg) :- potentialGuardCalls(id_stmt_gard,id_arg_other), transferArgument(id_transfer_1,id_arg_other,_), jump(id_transfer_1,id_block_to,_,_), jump(id_transfer_2,id_block_from,id_block_to,_),  transferArgument(id_transfer_2,id_arg,_). // necessary if there are several embedded calls from the require to go up to the guard code (see recursiveRequireCall.sol)
-// TODO: are there other similar situations than with Jump?
+potentialGuardCalls(id_stmt_gard, id_arg) :- potentialGuards(id_stmt_gard), blockStmt(id_block,id_stmt_gard), branch(_,_,id_block_from,id_block,_,_), argument(id_arg,id_block_from,_).
+potentialGuardCalls(id_stmt_gard, id_arg) :- potentialGuards(id_stmt_gard), blockStmt(id_block,id_stmt_gard), branch(_,_,id_block_from,_,id_block,_), argument(id_arg,id_block_from,_).
+potentialGuardCalls(id_stmt_gard, id_arg) :- potentialGuards(id_stmt_gard), blockStmt(id_block,id_stmt_gard), potentialGuardCalls(id_stmt_gard_2,id_arg), blockStmt(id_block_2,id_stmt_gard_2), branch(_,_,id_block_2,id_block,_,_).
+potentialGuardCalls(id_stmt_gard, id_arg) :- potentialGuards(id_stmt_gard), blockStmt(id_block,id_stmt_gard), potentialGuardCalls(id_stmt_gard_2,id_arg), blockStmt(id_block_2,id_stmt_gard_2), branch(_,_,id_block_2,_,id_block,_). // the two last lines are necessary for recursiveness of the process (embedded branches with guards in each block)
+// TODO: are there other similar situations than with Jump or Branch? Goto?
 
 
 // 7. We now have all unstrusted variables coming from completely unstrusted blocks, and loaded from state variables. We need to add local variables (and their derivatives) that are in potentially guarded blocks and happen before the guard. These variables are different than others, because if the guard condition is trusted, then these variables should also be trusted.
-unstrustedVariablesBeforeGuard(id, id_stmt_gard, id_arg_of_guard_block) :- potentialGuardCalls(id_stmt_gard, id_arg_of_guard_block), blockStmt(id_block, id_stmt_gard), untrustedVariables2(id),  blockStmt(id_block, id), !containsSender(id). // "!containsSender(id)" because we suppose here that we trust the sender, in order to see if the guard is tainted by something else (if it is not, then the guard is valid)
+unstrustedVariablesBeforeGuard(id, id_stmt_gard, id_arg_of_guard_block) :- potentialGuardCalls(id_stmt_gard, id_arg_of_guard_block), blockStmt(id_block, id_stmt_gard), untrustedVariables2(id), blockStmt(id_block, id), !containsSender(id). // "!containsSender(id)" because we suppose here that we trust the sender, in order to see if the guard is tainted by something else (if it is not, then the guard is valid)
+unstrustedVariablesBeforeGuard(id_arg_of_guard_block, id_stmt_gard, id_arg_of_guard_block) :- potentialGuardCalls(id_stmt_gard, id_arg_of_guard_block), blockStmt(id_block, id_stmt_gard), untrustedVariables2(id_arg_of_guard_block), argument(id_arg_of_guard_block,id_block,_). // if the block takes A00 as argument, and we are in the case where we look at a direct call to the function (with A00), then if A00 is not trusted, it is part of the set
 unstrustedVariablesBeforeGuard(id_arg_generic, id_stmt_gard, id_arg_of_guard_block) :- potentialGuardCalls(id_stmt_gard, id_arg_of_guard_block), blockStmt(id_block, id_stmt_gard), argument(id_arg_generic,id_block,index), transferArgument(_,id_arg_of_guard_block,index), untrustedVariables2(id_arg_of_guard_block). // to know if the guard is valid with the argument id_arg_of_guard_block, we "replace" the generic argument of the bloc by it. So if id_arg_of_guard_block is unstrusted, we say that id_arg_generic is generic (because it is the argument id present in the guard)
 unstrustedVariablesBeforeGuard(id, id_stmt_gard, id_arg_of_guard_block) :- unstrustedVariablesBeforeGuard(id_2, id_stmt_gard, id_arg_of_guard_block), derivesFrom(id,id_2).
 
 
-// 8. Obtain invalid guard calls from the previous potential guards
+// 8. Obtain valid and invalid guard calls from the previous potential guards
 invalidGuardCalls(id_stmt_gard, id_arg) :- unstrustedVariablesBeforeGuard(id_stmt_gard, id_stmt_gard, id_arg).
+trustedGuardCalls(id_stmt_gard, id_arg) :- potentialGuardCalls(id_stmt_gard, id_arg), !invalidGuardCalls(id_stmt_gard, id_arg).
+
+
+// 9. Find the untrusted blocks coming from the invalid guard calls
+blocksWithTrustedGuardCall(id_block, id_arg) :- blockStmt(id_block, id_stmt_gard), trustedGuardCalls(id_stmt_gard, id_arg).
+
+untrustedBlocks2(id_block, id_stmt_gard, id_arg_of_guard_block) :- blockStmt(id_block, id_stmt_gard), invalidGuardCalls(id_stmt_gard, id_arg_of_guard_block), !blocksWithTrustedGuardCall(id_block, id_arg_of_guard_block).
+untrustedBlocks2(id_block, id_stmt_gard, id_arg_of_guard_block) :- goto(_,id_block_guarded,id_block), untrustedBlocks2(id_block_guarded, id_stmt_gard, id_arg_of_guard_block), !blocksWithTrustedGuardCall(id_block, id_arg_of_guard_block).
+untrustedBlocks2(id_block, id_stmt_gard, id_arg_of_guard_block) :- branch(_,_,id_block_guarded,id_block,_,_), untrustedBlocks2(id_block_guarded, id_stmt_gard, id_arg_of_guard_block), !blocksWithTrustedGuardCall(id_block, id_arg_of_guard_block).
+untrustedBlocks2(id_block, id_stmt_gard, id_arg_of_guard_block) :- branch(_,_,id_block_guarded,_,id_block,_), untrustedBlocks2(id_block_guarded, id_stmt_gard, id_arg_of_guard_block), !blocksWithTrustedGuardCall(id_block, id_arg_of_guard_block).
+untrustedBlocks2(id_block, id_stmt_gard, id_arg_of_guard_block) :- jump(_,id_block_guarded,id_block,_), untrustedBlocks2(id_block_guarded, id_stmt_gard, id_arg_of_guard_block), !blocksWithTrustedGuardCall(id_block, id_arg_of_guard_block).
+untrustedBlocks2(id_block, id_stmt_gard, id_arg_of_guard_block) :- jump(_,id_block_guarded,_,id_block), untrustedBlocks2(id_block_guarded, id_stmt_gard, id_arg_of_guard_block), !blocksWithTrustedGuardCall(id_block, id_arg_of_guard_block).
+untrustedBlocks2(id_block, id_stmt_gard, id_arg_of_guard_block) :- jump(id_transfer,_,id_block_guarded,id_block), transferArgument(id_transfer,id_arg_of_guard_block,_), untrustedBlocks2(id_block_guarded, id_stmt_gard, id_arg_of_guard_block), !blocksWithTrustedGuardCall(id_block, id_arg_of_guard_block). // in this case, the untrusted block B returns to another block C, specified when a previous block A called the potentially guarded block B. Therefore, the next block C is untrusted only if B->C is from the same transfer (with the same argument) as A->B, that "made" B unstrusted. 
+// TODO: is here `jump(id_transfer,_,id_block_guarded,id_block)` the only case that requires to check the id_arg_of_guard_block?
+
+
+
+// TODO: see example of implicitDepencyInBranch: some trustedGuardCalls may become unstrusted after having used the fact that some fact calls were invalid. Therefore, we need at some point to implement some recursivity to find trusted guards
 
 
 //_________________________________________________________
@@ -241,6 +267,8 @@ invalidGuardCalls(id_stmt_gard, id_arg) :- unstrustedVariablesBeforeGuard(id_stm
 .output potentialGuardCalls
 .output unstrustedVariablesBeforeGuard
 .output invalidGuardCalls
+.output trustedGuardCalls
+.output untrustedBlocks2
 
 
 

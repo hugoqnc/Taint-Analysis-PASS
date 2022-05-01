@@ -160,7 +160,11 @@ derivesFrom(id_derived, id_taint) :- assign(id_derived,id_taint).
 derivesFrom(id_derived, id_taint) :- uop(id_derived,id_taint,_).
 derivesFrom(id_derived, id_taint) :- bop(id_derived,id_taint,_,_).
 derivesFrom(id_derived, id_taint) :- bop(id_derived,_,id_taint,_).
+derivesFrom(id_derived, id_taint) :- branch(_,_,_,id_block,_,id_taint), blockStmt(id_block, id_derived). // implicit dependency
+derivesFrom(id_derived, id_taint) :- branch(_,_,_,_,id_block,id_taint), blockStmt(id_block, id_derived). // implicit dependency
+derivesFrom(id_derived, id_taint) :- goto(id_transfer,_,id_block_to), transferArgument(id_transfer,id_taint,index), argument(id_derived,id_block_to,index). // derivation through aruments after a goto
 derivesFrom(id_derived, id_taint) :- derivesFrom(id_intermediary, id_taint), derivesFrom(id_derived, id_intermediary).//, !(const(id_intermediary,_), followsRecursively(id_taint,id_intermediary), followsRecursively(id_intermediary,id_derived)).
+// TODO: other possibility than branch or goto? jump?
 
 
 // 1. Identify sources and sinks
@@ -172,9 +176,14 @@ sources(id) :- argument(id,_,_).
 sinks(id) :- selfdestruct(id,_).
 
 
-// 2. Identify statements with conditions on "SENDER", meaning "potential guards"
+// 2. Identify statements with conditions on "SENDER", meaning "potential guards". Warning: the value of a statement only need to *depend* on "SENDER", possibly implicitly through a branch (see 7.sol)
+// containsSender(id_stmt) :- builtinVariable(id_stmt,"SENDER").
+// containsSender(id_stmt) :- branch(_,_,_,id_block,_,condition), containsSender(condition), blockStmt(id_block,id_stmt). // implicit dependency
+// containsSender(id_stmt) :- branch(_,_,_,_,id_block,condition), containsSender(condition), blockStmt(id_block,id_stmt). // implicit dependency
+// containsSender(id_stmt) :- assign(id_stmt,id_stmt2), containsSender(id_stmt2).
+// //containsSender(id_stmt) :- transferArgument(_,id_stmt,_), containsSender(id_stmt).
 containsSender(id_stmt) :- builtinVariable(id_stmt,"SENDER").
-containsSender(id_stmt) :- assign(id_stmt,id_stmt2), containsSender(id_stmt2).
+containsSender(id_derived) :- derivesFrom(id_derived,id_taint), containsSender(id_taint).
 
 potentialGuards(id_stmt) :- bop(id_stmt,id_stmt_c1,id_stmt_c2,"=="), containsSender(id_stmt_c1).
 potentialGuards(id_stmt) :- bop(id_stmt,id_stmt_c1,id_stmt_c2,"=="), containsSender(id_stmt_c2).
@@ -210,13 +219,15 @@ untrustedVariables2(id) :- loadedVariables1(id).
 
 
 // 6. For each potential guard, create a scenario for each block call depending on the provided argument
-potentialGuardCalls(id_stmt_gard, id_arg) :- potentialGuards(id_stmt_gard), blockStmt(id_block,id_stmt_gard), argument(id_arg,id_block,_).
+potentialGuardCalls(id_stmt_gard, id_arg) :- potentialGuards(id_stmt_gard), blockStmt(id_block,id_stmt_gard), argument(id_arg,id_block,_), function(id_block,_).
+potentialGuardCalls(id_stmt_gard, "000") :- potentialGuards(id_stmt_gard), blockStmt(id_block,id_stmt_gard), function(id_block,_), !argument(_,id_block,_). // if a block is a function which does not take any arguments, we use the argument 000
 potentialGuardCalls(id_stmt_gard, id_arg) :- potentialGuards(id_stmt_gard), blockStmt(id_block,id_stmt_gard), jump(id_transfer,_,id_block,_), transferArgument(id_transfer,id_arg,_).
 potentialGuardCalls(id_stmt_gard, id_arg) :- potentialGuardCalls(id_stmt_gard,id_arg_other), transferArgument(id_transfer_1,id_arg_other,_), jump(id_transfer_1,id_block_to,_,_), jump(id_transfer_2,id_block_from,id_block_to,_),  transferArgument(id_transfer_2,id_arg,_). // necessary if there are several embedded calls from the require to go up to the guard code (see recursiveRequireCall.sol)
 potentialGuardCalls(id_stmt_gard, id_arg) :- potentialGuards(id_stmt_gard), blockStmt(id_block,id_stmt_gard), branch(_,_,id_block_from,id_block,_,_), argument(id_arg,id_block_from,_).
 potentialGuardCalls(id_stmt_gard, id_arg) :- potentialGuards(id_stmt_gard), blockStmt(id_block,id_stmt_gard), branch(_,_,id_block_from,_,id_block,_), argument(id_arg,id_block_from,_).
 potentialGuardCalls(id_stmt_gard, id_arg) :- potentialGuards(id_stmt_gard), blockStmt(id_block,id_stmt_gard), potentialGuardCalls(id_stmt_gard_2,id_arg), blockStmt(id_block_2,id_stmt_gard_2), branch(_,_,id_block_2,id_block,_,_).
 potentialGuardCalls(id_stmt_gard, id_arg) :- potentialGuards(id_stmt_gard), blockStmt(id_block,id_stmt_gard), potentialGuardCalls(id_stmt_gard_2,id_arg), blockStmt(id_block_2,id_stmt_gard_2), branch(_,_,id_block_2,_,id_block,_). // the two last lines are necessary for recursiveness of the process (embedded branches with guards in each block)
+potentialGuardCalls(id_stmt_gard, id_arg) :- potentialGuards(id_stmt_gard), blockStmt(id_block,id_stmt_gard), goto(id_transfer,_,id_block), transferArgument(id_transfer,id_arg,_).
 // TODO: are there other similar situations than with Jump or Branch? Goto?
 
 
@@ -245,6 +256,14 @@ untrustedBlocks2(id_block, id_stmt_gard, id_arg_of_guard_block) :- jump(id_trans
 // TODO: is here `jump(id_transfer,_,id_block_guarded,id_block)` the only case that requires to check the id_arg_of_guard_block?
 
 
+//10.
+// untrustedVariables3(id) :- untrustedVariables2(id)
+// untrustedVariables3(id) :- untrustedBlocks2(id_block), blockStmt(id_block, id), derivesFrom(id,id_2), untrustedVariables1(id_2). 
+
+
+
+
+
 
 // TODO: see example of implicitDepencyInBranch: some trustedGuardCalls may become unstrusted after having used the fact that some fact calls were invalid. Therefore, we need at some point to implement some recursivity to find trusted guards
 
@@ -256,7 +275,7 @@ untrustedBlocks2(id_block, id_stmt_gard, id_arg_of_guard_block) :- jump(id_trans
 .output tainted_sinks
 // .output sources
 // .output sinks
-// .output containsSender
+.output containsSender
 .output potentialGuards
 // .output blocksWithPotentialGuard
 // .output untrustedBlocks1

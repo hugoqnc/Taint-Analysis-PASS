@@ -143,8 +143,9 @@ msgSender(id) :- builtinVariable(id, "SENDER").
 .decl invalidGuardCalls(id_stmt_gard: SSA, id_arg: SSA) // potential guards which are in fact not guards (we are sure they will never become valid)
 .decl trustedGuardCalls(id_stmt_gard: SSA, id_arg: SSA) // guards that are, up to now, trusted (this may change when we will learn more info)
 .decl blocksWithTrustedGuardCall(id_block: Block, id_arg: SSA) // block containing a trusted guard call
-.decl untrustedBlocks2(id_block: Block, id_stmt_gard: SSA, id_arg_of_guard_block: SSA) // blocks unstrusted at this point, taking into account the invalid guards found up to now
-.decl untrustedVariables3(id: SSA)
+.decl untrustedBlocks2(id_block: Block, id_stmt_gard: SSA, id_arg_of_guard_block: SSA) // newly unstrusted blocks (in a given execution going through id_stmt_gard with id_arg_of_guard_block), taking into account the invalid guards found up to now. It does not include untrustedBlocks1!
+// .decl untrustedVariables3(id: SSA, id_stmt_gard: SSA, id_arg_of_guard_block: SSA) // newly unstrusted variables (in a given execution going through id_stmt_gard with id_arg_of_guard_block), taking into account the invalid guards found up to now.
+// .decl untrustedStateVariables2(field: Name)
 
 //_________________________________________________________
 // LOGIC IMPLEMENTATION
@@ -163,6 +164,7 @@ derivesFrom(id_derived, id_taint) :- bop(id_derived,_,id_taint,_).
 derivesFrom(id_derived, id_taint) :- branch(_,_,_,id_block,_,id_taint), blockStmt(id_block, id_derived). // implicit dependency
 derivesFrom(id_derived, id_taint) :- branch(_,_,_,_,id_block,id_taint), blockStmt(id_block, id_derived). // implicit dependency
 derivesFrom(id_derived, id_taint) :- goto(id_transfer,_,id_block_to), transferArgument(id_transfer,id_taint,index), argument(id_derived,id_block_to,index). // derivation through aruments after a goto
+derivesFrom(id_derived, id_taint) :- selfdestruct(id_derived, id_taint).
 derivesFrom(id_derived, id_taint) :- derivesFrom(id_intermediary, id_taint), derivesFrom(id_derived, id_intermediary).//, !(const(id_intermediary,_), followsRecursively(id_taint,id_intermediary), followsRecursively(id_intermediary,id_derived)).
 // TODO: other possibility than branch or goto? jump?
 
@@ -177,11 +179,6 @@ sinks(id) :- selfdestruct(id,_).
 
 
 // 2. Identify statements with conditions on "SENDER", meaning "potential guards". Warning: the value of a statement only need to *depend* on "SENDER", possibly implicitly through a branch (see 7.sol)
-// containsSender(id_stmt) :- builtinVariable(id_stmt,"SENDER").
-// containsSender(id_stmt) :- branch(_,_,_,id_block,_,condition), containsSender(condition), blockStmt(id_block,id_stmt). // implicit dependency
-// containsSender(id_stmt) :- branch(_,_,_,_,id_block,condition), containsSender(condition), blockStmt(id_block,id_stmt). // implicit dependency
-// containsSender(id_stmt) :- assign(id_stmt,id_stmt2), containsSender(id_stmt2).
-// //containsSender(id_stmt) :- transferArgument(_,id_stmt,_), containsSender(id_stmt).
 containsSender(id_stmt) :- builtinVariable(id_stmt,"SENDER").
 containsSender(id_derived) :- derivesFrom(id_derived,id_taint), containsSender(id_taint).
 
@@ -205,7 +202,6 @@ untrustedBlocks1(id_block) :- argument(_,id_block,_), !blocksWithPotentialGuard(
 
 untrustedVariables1(id) :- sources(id).
 untrustedVariables1(id) :- untrustedBlocks1(id_block), blockStmt(id_block, id), derivesFrom(id,id_2), untrustedVariables1(id_2). 
-
 untrustedStateVariables1(field) :- store(id_stmt, field, id_attributed_stmt), untrustedVariables1(id_attributed_stmt), blockStmt(id_block, id_stmt), untrustedBlocks1(id_block).
 untrustedStateVariables1(field) :- store(id_stmt, field, id_attributed_stmt), loadedVariables1(id_attributed_stmt), blockStmt(id_block, id_stmt), untrustedBlocks1(id_block). // this part is necessary to solve recurrent store/load of a same taint variable
 
@@ -253,16 +249,24 @@ untrustedBlocks2(id_block, id_stmt_gard, id_arg_of_guard_block) :- branch(_,_,id
 untrustedBlocks2(id_block, id_stmt_gard, id_arg_of_guard_block) :- jump(_,id_block_guarded,id_block,_), untrustedBlocks2(id_block_guarded, id_stmt_gard, id_arg_of_guard_block), !blocksWithTrustedGuardCall(id_block, id_arg_of_guard_block).
 untrustedBlocks2(id_block, id_stmt_gard, id_arg_of_guard_block) :- jump(_,id_block_guarded,_,id_block), untrustedBlocks2(id_block_guarded, id_stmt_gard, id_arg_of_guard_block), !blocksWithTrustedGuardCall(id_block, id_arg_of_guard_block).
 untrustedBlocks2(id_block, id_stmt_gard, id_arg_of_guard_block) :- jump(id_transfer,_,id_block_guarded,id_block), transferArgument(id_transfer,id_arg_of_guard_block,_), untrustedBlocks2(id_block_guarded, id_stmt_gard, id_arg_of_guard_block), !blocksWithTrustedGuardCall(id_block, id_arg_of_guard_block). // in this case, the untrusted block B returns to another block C, specified when a previous block A called the potentially guarded block B. Therefore, the next block C is untrusted only if B->C is from the same transfer (with the same argument) as A->B, that "made" B unstrusted. 
-// TODO: is here `jump(id_transfer,_,id_block_guarded,id_block)` the only case that requires to check the id_arg_of_guard_block?
+// TODO: is `jump(id_transfer,_,id_block_guarded,id_block)` the only case that requires to check the id_arg_of_guard_block?
 
 
 //10.
-// untrustedVariables3(id) :- untrustedVariables2(id)
-// untrustedVariables3(id) :- untrustedBlocks2(id_block), blockStmt(id_block, id), derivesFrom(id,id_2), untrustedVariables1(id_2). 
+// .decl unstrustedBlocks3(id_block: Block, id_stmt_gard: SSA, id_arg_of_guard_block: SSA)
+// .decl invalidGuardCalls2(id_stmt_gard: SSA, id_arg: SSA)
+// .decl trustedGuardCalls2(id_stmt_gard: SSA, id_arg: SSA)
 
+// untrustedVariables3(id, "000", "000") :- untrustedVariables2(id).
+// untrustedVariables3(id, id_stmt_gard, id_arg_of_guard_block) :- untrustedBlocks3(id_block, id_stmt_gard, id_arg_of_guard_block), blockStmt(id_block,id), derivesFrom(id,id_taint), untrustedVariables3(id_taint,_,_).
+// untrustedVariables3(id, id_stmt_gard, id_arg_of_guard_block) :- 
 
+// untrustedStateVariables2(field) :- untrustedStateVariables1(field)
+// untrustedStateVariables2(field) :- store(id_stmt, field, id_attributed_stmt), untrustedVariables3(id_attributed_stmt,id_stmt_gard,id_arg_of_guard_block), blockStmt(id_block, id_stmt), untrustedBlocks3(id_block,id_stmt_gard,id_arg_of_guard_block).
 
-
+// untrustedBlocks3(id_block, "000", "000") :- untrustedBlocks1(id_block)
+// untrustedBlocks3(id_block, id_stmt_gard, id_arg_of_guard_block) :- untrustedBlocks2(id_block, id_stmt_gard, id_arg_of_guard_block)
+// untrustedBlocks3(id_block, id_stmt_gard, id_arg_of_guard_block) :- invalidGuardCalls2(id_stmt_gard, id_arg_of_guard_block), blockStmt(id_block,id_stmt_gard)
 
 
 // TODO: see example of implicitDepencyInBranch: some trustedGuardCalls may become unstrusted after having used the fact that some fact calls were invalid. Therefore, we need at some point to implement some recursivity to find trusted guards
@@ -275,7 +279,7 @@ untrustedBlocks2(id_block, id_stmt_gard, id_arg_of_guard_block) :- jump(id_trans
 .output tainted_sinks
 // .output sources
 // .output sinks
-.output containsSender
+//.output containsSender
 .output potentialGuards
 // .output blocksWithPotentialGuard
 // .output untrustedBlocks1
@@ -283,8 +287,8 @@ untrustedBlocks2(id_block, id_stmt_gard, id_arg_of_guard_block) :- jump(id_trans
 .output untrustedStateVariables1
 // .output loadedVariables1
 .output untrustedVariables2
-.output potentialGuardCalls
-.output unstrustedVariablesBeforeGuard
+//.output potentialGuardCalls
+//.output unstrustedVariablesBeforeGuard
 .output invalidGuardCalls
 .output trustedGuardCalls
 .output untrustedBlocks2

@@ -134,6 +134,7 @@ msgSender(id) :- builtinVariable(id, "SENDER").
 .decl untrustedStateVariables(field: Name) // state variable that are unstrusted. If a state variable can be given an unstrusted value in a specific context, it becomes untrusted in all contexts (because it is a shared value).
 .decl untrustedBlocks(id_block: Block, id_stmt_gard: SSA, id_arg_of_guard_block: SSA) // id_block is an unstrusted block in the context of the calling of a potential guard (id_stmt_gard, id_arg_of_guard_block). This means that there is no guard can "save" the block, so we can derive untrusted values inside of it. If we have (id_block, "000", "000"), then id_block is unstrusted in all contexts.
 .decl untrustedVariablesBeforeGuard(id: SSA, id_stmt_gard: SSA, id_arg_of_guard_block: SSA) // when looking at a potential guard (id_stmt_gard, id_arg_of_guard_block), to evaluate it, we can use the untrustedVariables, but we also need to evaluate local variables in the same block as the potential guard and appearing before it. Untrusted variables from this set are grouped here.
+.decl untrustedStateVariablesBeforeGuard(field: Name, id_stmt_gard: SSA, id_arg_of_guard_block: SSA) // when looking at a potential guard (id_stmt_gard, id_arg_of_guard_block), to evaluate it, we can use the untrustedVariables, but we also need to find the state variables that are untrusted in this context, and that will become fully untrusted if the potential guard is invalid
 .decl invalidGuardCalls(id_stmt_gard: SSA, id_arg: SSA) // these are the potential guard calls that we have evaluated and that we are sure are not valid (they are therefore not guards in the given context)
 .decl blocksWithPotentialGuard(id_block: Block, id_arg: SSA)  // this is the set of blocks that potentially contain a guard, in the given
 
@@ -198,6 +199,8 @@ untrustedVariablesBeforeGuard(id, id_stmt_gard, id_arg_of_guard_block) :- potent
 untrustedVariablesBeforeGuard(id_arg_of_guard_block, id_stmt_gard, id_arg_of_guard_block) :- potentialGuardCalls(id_stmt_gard, id_arg_of_guard_block), blockStmt(id_block, id_stmt_gard), untrustedVariables(id_arg_of_guard_block,"000","000"), argument(id_arg_of_guard_block,id_block,_). // if the block takes A00 as argument, and we are in the case where we look at a direct call to the function (with A00), then if A00 is not trusted, it is part of the set
 untrustedVariablesBeforeGuard(id_arg_generic, id_stmt_gard, id_arg_of_guard_block) :- potentialGuardCalls(id_stmt_gard, id_arg_of_guard_block), blockStmt(id_block, id_stmt_gard), argument(id_arg_generic,id_block,index), transferArgument(_,id_arg_of_guard_block,index), untrustedVariables(id_arg_of_guard_block,"000","000"). // to know if the guard is valid with the argument id_arg_of_guard_block, we "replace" the generic argument of the bloc by it. So if id_arg_of_guard_block is unstrusted, we say that id_arg_generic is generic (because it is the argument id present in the guard)
 untrustedVariablesBeforeGuard(id, id_stmt_gard, id_arg_of_guard_block) :- untrustedVariablesBeforeGuard(id_2, id_stmt_gard, id_arg_of_guard_block), derivesFrom(id,id_2).
+untrustedVariablesBeforeGuard(id, id_stmt_gard, id_arg_of_guard_block) :- load(id, field), untrustedStateVariablesBeforeGuard(field,id_stmt_gard,id_arg_of_guard_block).
+untrustedVariablesBeforeGuard(id, id_stmt_gard, id_arg_of_guard_block) :- derivesFrom(id,id_2), load(id_2, field), untrustedStateVariablesBeforeGuard(field,id_stmt_gard,id_arg_of_guard_block).
 
 
 invalidGuardCalls(id_stmt_gard, id_arg) :- untrustedVariablesBeforeGuard(id_stmt_gard, id_stmt_gard, id_arg).
@@ -227,9 +230,10 @@ untrustedBlocks(id_block, id_stmt_gard, id_arg_of_guard_block) :- blockStmt(id_b
 
 
 untrustedStateVariables(field) :- store(id_stmt, field, id_attributed_stmt), untrustedVariables(id_attributed_stmt,id_stmt_gard,id_arg_of_guard_block), blockStmt(id_block, id_stmt), untrustedBlocks(id_block,id_stmt_gard, id_arg_of_guard_block).
-untrustedStateVariables(field) :- store(_, field, id_attributed_stmt), untrustedVariablesBeforeGuard(id_attributed_stmt,id_stmt_gard,id_arg_of_guard_block).//, invalidGuardCalls(id_stmt_gard,id_arg_of_guard_block). // TODO: justified by example stateUpdateBeforeRequire.sol (or by 4.sol), but leads to a problem with 6.sol -> if we add this untrustedStateVariables, it can't be removed in case the guard (after) is true...
 untrustedStateVariables(field) :- store(id_stmt, field, id_attributed_stmt), untrustedVariables(id_attributed_stmt,"000","000"), blockStmt(id_block, id_stmt), untrustedBlocks(id_block,_,_).
 
+
+untrustedStateVariablesBeforeGuard(field,id_stmt_gard,id_arg_of_guard_block) :- untrustedVariablesBeforeGuard(id_attributed_stmt,id_stmt_gard,id_arg_of_guard_block), store(_, field, id_attributed_stmt).
 
 
 //_________________________________________________________
@@ -247,6 +251,7 @@ untrustedStateVariables(field) :- store(id_stmt, field, id_attributed_stmt), unt
 .output untrustedStateVariables
 .output untrustedBlocks
 .output untrustedVariablesBeforeGuard
+.output untrustedStateVariablesBeforeGuard
 .output potentialGuardCalls
 .output invalidGuardCalls
 .output blocksWithPotentialGuard

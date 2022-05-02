@@ -9,7 +9,7 @@ __pycache__
 # Ignore test-generated files
 *.facts
 *.csv
-
+!/project/contracts_groundtruth.csv
 
 # Mac files
 **/.DS_Store

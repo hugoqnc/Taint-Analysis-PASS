@@ -11,3 +11,10 @@ implicitDependencyInBranch; S20
 multipleArguments; S12
 recursiveRequireCall; S15
 stateUpdateBeforeRequire; S16
+new_1; S14
+new_2; S08
+new_3; S15
+new_4; S18
+new_5; 
+new_6; S18, S24
+new_7; S21

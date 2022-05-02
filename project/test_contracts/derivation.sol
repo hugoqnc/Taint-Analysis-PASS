@@ -25,5 +25,7 @@ contract Contract {
     int f = e;
     z = f;
     int g = z;
+    require(msg.sender == address(g));
+    selfdestruct(msg.sender);
   }
 }

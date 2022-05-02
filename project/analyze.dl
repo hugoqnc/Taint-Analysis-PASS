@@ -176,6 +176,8 @@ potentialGuardConditions(id_stmt) :- bop(id_stmt,_,id_stmt_1,_), potentialGuards
 
 potentialGuards(id_stmt) :- potentialGuardConditions(id_stmt), branch(_,_,_,_,_,id_stmt). // potential guard if it is the condition of a branch
 potentialGuards(id_stmt) :- potentialGuardConditions(id_stmt), transferArgument(id_transfer,id_stmt,_), return(id_transfer,id_block), jump(_,_,id_block,id_block_next), branch(_,_,id_block_next,_,_,id_condition), argument(id_condition,id_block_next,_). //potential guard if it is a function call that returns to the condition of a branch (see 8.sol)
+// potentialGuards(id_stmt) :- potentialGuardConditions(id_stmt), derivesFrom(id_stmt_1,id_stmt), branch(_,_,_,_,_,id_stmt_1). //
+potentialGuards(id_stmt) :- potentialGuardConditions(id_stmt), transferArgument(id_transfer,id_stmt,_), return(id_transfer,_), jump(_,_,_,id_block_next), branch(_,_,id_block_next,_,_,id_condition), argument(id_condition,id_block_next,_).
 
 
 potentialGuardCalls(id_stmt_gard, id_arg) :- potentialGuards(id_stmt_gard), blockStmt(id_block,id_stmt_gard), argument(id_arg,id_block,_), function(id_block,_).
@@ -207,13 +209,13 @@ invalidGuardCalls(id_stmt_gard, id_arg) :- untrustedVariablesBeforeGuard(id_stmt
 
 
 blocksWithPotentialGuard(id_block,"000") :- potentialGuardCalls(id_stmt,_), blockStmt(id_block, id_stmt).
-blocksWithPotentialGuard(id_block,"000") :- goto(_,id_block_guarded,id_block), blocksWithPotentialGuard(id_block_guarded,"000").
-blocksWithPotentialGuard(id_block,"000") :- branch(_,_,id_block_guarded,id_block,_,id_stmt_condition), blocksWithPotentialGuard(id_block_guarded,"000"), !potentialGuards(id_block_guarded).
-blocksWithPotentialGuard(id_block,"000") :- branch(_,_,id_block_guarded,_,id_block,id_stmt_condition), blocksWithPotentialGuard(id_block_guarded,"000"), !potentialGuards(id_block_guarded).
-blocksWithPotentialGuard(id_block,"000") :- jump(_,id_block_guarded,id_block,_), blocksWithPotentialGuard(id_block_guarded,"000").
-blocksWithPotentialGuard(id_block,"000") :- jump(_,id_block_guarded,_,id_block), blocksWithPotentialGuard(id_block_guarded,"000").
-blocksWithPotentialGuard(id_block,"000") :- jump(_,_,id_block_guarded,id_block), blocksWithPotentialGuard(id_block_guarded,"000").
-blocksWithPotentialGuard(id_block, id_arg) :- blockStmt(id_block, id_stmt_gard), potentialGuardCalls(id_stmt_gard, id_arg).//, !invalidGuardCalls(id_stmt_gard, id_arg).
+blocksWithPotentialGuard(id_block,id_arg) :- goto(_,id_block_guarded,id_block), blocksWithPotentialGuard(id_block_guarded,id_arg).
+blocksWithPotentialGuard(id_block,id_arg) :- branch(_,_,id_block_guarded,id_block,_,id_stmt_condition), blocksWithPotentialGuard(id_block_guarded,id_arg), !potentialGuards(id_block_guarded).
+blocksWithPotentialGuard(id_block,id_arg) :- branch(_,_,id_block_guarded,_,id_block,id_stmt_condition), blocksWithPotentialGuard(id_block_guarded,id_arg), !potentialGuards(id_block_guarded).
+blocksWithPotentialGuard(id_block,id_arg) :- jump(_,id_block_guarded,id_block,_), blocksWithPotentialGuard(id_block_guarded,id_arg).
+blocksWithPotentialGuard(id_block,id_arg) :- jump(_,id_block_guarded,_,id_block), blocksWithPotentialGuard(id_block_guarded,id_arg).
+blocksWithPotentialGuard(id_block,id_arg) :- jump(_,_,id_block_guarded,id_block), blocksWithPotentialGuard(id_block_guarded,id_arg).
+blocksWithPotentialGuard(id_block, id_arg) :- blockStmt(id_block, id_arg), potentialGuardCalls(_, id_arg).//, !invalidGuardCalls(id_stmt_gard, id_arg).
 
 
 untrustedBlocks(id_block, "000", "000") :- blockStmt(id_block, id_stmt), untrustedVariables(id_stmt,_,_), !blocksWithPotentialGuard(id_block,_).

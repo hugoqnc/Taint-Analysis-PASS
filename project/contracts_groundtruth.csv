@@ -10,3 +10,4 @@ derivation; S17
 implicitDependencyInBranch; S20
 multipleArguments; S12
 recursiveRequireCall; S15
+stateUpdateBeforeRequire; S16

@@ -24,17 +24,19 @@ def get_tainted_sinks(compile_output, contract_graph, contract_facts, *, input_f
     return tainted_sinks
 
 
-if __name__ == '__main__':
-    # Parse command line.
-    parser = argparse.ArgumentParser()
-    parser.add_argument('input_file', type=Path)
-    args = parser.parse_args()
-    ground_truth_file_path = args.input_file
-    # print(ground_truth_file_path)
+def print_summary(summary):
+    if summary:
+        print("-------------------------------")
+        for contract in summary:
+            print(contract)
+            print("-------------------------------")
+    else:
+        print("No errors found!")
 
+
+def run_tests(file_path):
     summary = []
-
-    with open(ground_truth_file_path) as ground_truth_file:
+    with open(file_path) as ground_truth_file:
         for line in ground_truth_file:
             contract_name, tainted_sinks = line.split(";")
             contract_name += ".sol"
@@ -54,11 +56,17 @@ if __name__ == '__main__':
             
             if tainted_sinks_predicted != tainted_sinks_ground_truth:
                 summary.append(f"Contract {contract_name} has errors. \n expected: {tainted_sinks_ground_truth}, got: {tainted_sinks_predicted}")
-    
-    if summary:
-        print("-------------------------------")
-        for contract in summary:
-            print(contract)
-            print("-------------------------------")
-    else:
-        print("No errors found!")
+    return summary
+
+
+if __name__ == '__main__':
+    # Parse command line.
+    parser = argparse.ArgumentParser()
+    parser.add_argument('input_file', type=Path)
+    args = parser.parse_args()
+    ground_truth_file_path = args.input_file
+    # print(ground_truth_file_path)
+
+    summary = run_tests(ground_truth_file_path)
+
+    print_summary(summary)

@@ -53,7 +53,6 @@ if __name__ == '__main__':
             tainted_sinks_predicted = get_tainted_sinks(compile_output, contract_graph, contract_facts, input_file=args.input_file)
             
             if tainted_sinks_predicted != tainted_sinks_ground_truth:
-                print(tainted_sinks_predicted, tainted_sinks_ground_truth)
                 summary.append(f"Contract {contract_name} has errors. \n expected: {tainted_sinks_ground_truth}, got: {tainted_sinks_predicted}")
     
     if summary:

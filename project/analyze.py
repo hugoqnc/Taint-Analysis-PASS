@@ -21,12 +21,11 @@ def analyze(compile_output, contract_graph, contract_facts, *, output_dir):
 
     # The output must be either 'Tainted' or 'Safe':
     print("Tainted" if facts_out['tainted_sinks'] else "Safe")
-    #print(output)
-    for key in facts_out:
-        max = 32
-        spacedKey = key + " "*(max-len(key)) + ":"
-        print(spacedKey, facts_out[key])
-    #print(facts_out)
+    # print(output)
+    # for key in facts_out:
+    #     max = 32
+    #     spacedKey = key + " "*(max-len(key)) + ":"
+    #     print(spacedKey, facts_out[key])
 
 
 def visualize(compile_output, contract_graph, contract_facts, *, output_dir):

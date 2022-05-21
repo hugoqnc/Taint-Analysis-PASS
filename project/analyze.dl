@@ -124,26 +124,18 @@ msgSender(id) :- builtinVariable(id, "SENDER").
 //_________________________________________________________
 
 .decl tainted_sinks(id: SSA)
-.decl derivesFrom(id_derived: SSA, id_taint: SSA) // id_derived is obtained (recursively) with assign/uop/bop/selfdestruct explicit operations and branch/goto implicit operations from id_taint
-.decl containsSender(id_stmt: SSA) // statements that contain (recursively) "SENDER" or a value that derives from it
-.decl potentialGuardConditions(id_stmt: SSA) // statements that contain a condition that involves msg.sender
-.decl potentialGuards(id_stmt: SSA) // statements that could be a guard (branching on a condition that involves msg.sender), that we need to verify to know if they are actual guards or not
+.decl derivesFrom(id_derived: SSA, id_taint: SSA) 
+.decl containsCurrentSender(id_stmt: SSA, ctxt: SSA)
 
-.decl potentialGuardCalls(id_stmt_gard: SSA, id_arg: SSA) // a guard statement is in a block that can be called in different contexts: directly, or by another function. The distinction is important because the block argument is untrusted in a direct call, but in the case of the call by another function, it could be trusted, depending on the given argument. potentialGuardCalls groups guard statements with possible values of their block arguement. If the block has no argument, we use "000"
-.decl untrustedVariables(id: SSA, id_stmt_gard: SSA, id_arg_of_guard_block: SSA) // id is an unstrusted variable in the context of the calling of a potential guard (id_stmt_gard, id_arg_of_guard_block). If we have (id, "000", "000"), then id is unstrusted in all contexts.
-.decl untrustedStateVariables(field: Name) // state variable that are unstrusted. If a state variable can be given an unstrusted value in a specific context, it becomes untrusted in all contexts (because it is a shared value).
-.decl untrustedBlocks(id_block: Block, id_stmt_gard: SSA, id_arg_of_guard_block: SSA) // id_block is an unstrusted block in the context of the calling of a potential guard (id_stmt_gard, id_arg_of_guard_block). This means that there is no guard can "save" the block, so we can derive untrusted values inside of it. If we have (id_block, "000", "000"), then id_block is unstrusted in all contexts.
-.decl untrustedVariablesBeforeGuard(id: SSA, id_stmt_gard: SSA, id_arg_of_guard_block: SSA) // when looking at a potential guard (id_stmt_gard, id_arg_of_guard_block), to evaluate it, we can use the untrustedVariables, but we also need to evaluate local variables in the same block as the potential guard and appearing before it. Untrusted variables from this set are grouped here.
-.decl untrustedStateVariablesBeforeGuard(field: Name, id_stmt_gard: SSA, id_arg_of_guard_block: SSA) // when looking at a potential guard (id_stmt_gard, id_arg_of_guard_block), to evaluate it, we can use the untrustedVariables, but we also need to find the state variables that are untrusted in this context, and that will become fully untrusted if the potential guard is invalid
-.decl invalidGuardCalls(id_stmt_gard: SSA, id_arg: SSA) // these are the potential guard calls that we have evaluated and that we are sure are not valid (they are therefore not guards in the given context)
-.decl blocksWithPotentialGuard(id_block: Block, id_arg: SSA)  // this is the set of blocks that potentially contain a guard, in the given
+.decl trustedVariables(id: SSA, ctxt: SSA)
+.decl trustedGuards(id: SSA, ctxt: SSA)
+.decl trustedBlocks(id_block: Block, ctxt: SSA)
 
 //_________________________________________________________
 // LOGIC IMPLEMENTATION
 //_________________________________________________________
 
-tainted_sinks(id) :- selfdestruct(id,id_taint), untrustedVariables(id,_,_).
-
+//tainted_sinks(id) :- selfdestruct(id,id_taint), !trustedVariables(id,_,_).
 
 derivesFrom(id_derived, id_taint) :- assign(id_derived,id_taint).
 derivesFrom(id_derived, id_taint) :- uop(id_derived,id_taint,_).
@@ -151,116 +143,22 @@ derivesFrom(id_derived, id_taint) :- bop(id_derived,id_taint,_,_).
 derivesFrom(id_derived, id_taint) :- bop(id_derived,_,id_taint,_).
 derivesFrom(id_derived, id_taint) :- branch(_,_,_,id_block,_,id_taint), blockStmt(id_block, id_derived). // implicit dependency
 derivesFrom(id_derived, id_taint) :- branch(_,_,_,_,id_block,id_taint), blockStmt(id_block, id_derived). // implicit dependency
-derivesFrom(id_derived, id_taint) :- goto(id_transfer,_,id_block_to), transferArgument(id_transfer,id_taint,index), argument(id_derived,id_block_to,index). // derivation through aruments after a goto
+derivesFrom(id_derived, id_taint) :- goto(id_transfer,_,id_block_to), transferArgument(id_transfer,id_taint,index), argument(id_derived,id_block_to,index). // derivation through arguments after a goto
 derivesFrom(id_derived, id_taint) :- selfdestruct(id_derived, id_taint).
-derivesFrom(id_derived, id_taint) :- derivesFrom(id_intermediary, id_taint), derivesFrom(id_derived, id_intermediary).//, !(const(id_intermediary,_), followsRecursively(id_taint,id_intermediary), followsRecursively(id_intermediary,id_derived)).
-// TODO: other possibility than branch or goto? jump?
+derivesFrom(id_derived, id_taint) :- derivesFrom(id_intermediary, id_taint), derivesFrom(id_derived, id_intermediary).
 
-
-containsSender(id_stmt) :- builtinVariable(id_stmt,"SENDER"), !load(id_stmt,_).
-containsSender(id_derived) :- derivesFrom(id_derived,id_taint), containsSender(id_taint).
-
-// .decl containsValidSender(id_stmt: SSA, id_block_current: Block)
-// containsValidSender(id_stmt, id_block_current) :- containsSender(id_stmt), blockStmt(id_block_current,id_stmt), !(derivesFrom(id_stmt,id_load), load(id_load,_)).
-
-
-
-untrustedVariables(id, "000", "000") :- builtinVariable(id,_).
-untrustedVariables(id, "000", "000") :- argument(id,_,_).
-untrustedVariables(id, "000", "000") :- untrustedBlocks(id_block,"000","000"), blockStmt(id_block, id), derivesFrom(id,id_2), untrustedVariables(id_2,"000","000").
-untrustedVariables(id, "000", "000") :- load(id, field), untrustedStateVariables(field).
-untrustedVariables(id, "000", "000") :- derivesFrom(id,id_2), load(id_2, field), untrustedStateVariables(field).
-untrustedVariables(id, id_stmt_gard, id_arg_of_guard_block) :- untrustedBlocks(id_block, id_stmt_gard, id_arg_of_guard_block), blockStmt(id_block,id), derivesFrom(id,id_taint), untrustedVariables(id_taint,_,_).
-
-potentialGuardConditions(id_stmt) :- bop(id_stmt,id_stmt_c1,id_stmt_c2,_), containsSender(id_stmt_c1).
-potentialGuardConditions(id_stmt) :- bop(id_stmt,id_stmt_c1,id_stmt_c2,_), containsSender(id_stmt_c2).
-potentialGuardConditions(id_stmt) :- assign(id_stmt, id_stmt_1), potentialGuards(id_stmt_1).
-potentialGuardConditions(id_stmt) :- bop(id_stmt,id_stmt_1,_,_), potentialGuards(id_stmt_1).
-potentialGuardConditions(id_stmt) :- bop(id_stmt,_,id_stmt_1,_), potentialGuards(id_stmt_1).
-
-potentialGuards(id_stmt) :- potentialGuardConditions(id_stmt), branch(_,_,_,_,_,id_stmt). // potential guard if it is the condition of a branch
-potentialGuards(id_stmt) :- potentialGuardConditions(id_stmt), transferArgument(id_transfer,id_stmt,_), return(id_transfer,id_block), jump(_,_,id_block,id_block_next), branch(_,_,id_block_next,_,_,id_condition), argument(id_condition,id_block_next,_). 
-potentialGuards(id_stmt) :- potentialGuardConditions(id_stmt), transferArgument(id_transfer,id_stmt,_), return(id_transfer,_), jump(_,_,_,id_block_next), branch(_,_,id_block_next,_,_,id_condition), argument(id_condition,id_block_next,_).
-
-
-potentialGuardCalls(id_stmt_gard, id_arg) :- potentialGuards(id_stmt_gard), blockStmt(id_block,id_stmt_gard), argument(id_arg,id_block,_), function(id_block,_).
-potentialGuardCalls(id_stmt_gard, "000") :- potentialGuards(id_stmt_gard), blockStmt(id_block,id_stmt_gard), function(id_block,_), !argument(_,id_block,_). // if a block is a function which does not take any arguments, we use the argument 000
-potentialGuardCalls(id_stmt_gard, id_arg) :- potentialGuards(id_stmt_gard), blockStmt(id_block,id_stmt_gard), jump(id_transfer,_,id_block,_), transferArgument(id_transfer,id_arg,_).
-potentialGuardCalls(id_stmt_gard, id_arg) :- potentialGuardCalls(id_stmt_gard,id_arg_other), transferArgument(id_transfer_1,id_arg_other,_), jump(id_transfer_1,id_block_to,_,_), jump(id_transfer_2,id_block_from,id_block_to,_),  transferArgument(id_transfer_2,id_arg,_). // necessary if there are several embedded calls from the require to go up to the guard code (see recursiveRequireCall.sol)
-potentialGuardCalls(id_stmt_gard, id_arg) :- potentialGuards(id_stmt_gard), blockStmt(id_block,id_stmt_gard), branch(_,_,id_block_from,id_block,_,_), argument(id_arg,id_block_from,_).
-potentialGuardCalls(id_stmt_gard, id_arg) :- potentialGuards(id_stmt_gard), blockStmt(id_block,id_stmt_gard), branch(_,_,id_block_from,_,id_block,_), argument(id_arg,id_block_from,_).
-potentialGuardCalls(id_stmt_gard, id_arg) :- potentialGuards(id_stmt_gard), blockStmt(id_block,id_stmt_gard), potentialGuardCalls(id_stmt_gard_2,id_arg), blockStmt(id_block_2,id_stmt_gard_2), branch(_,_,id_block_2,id_block,_,_).
-potentialGuardCalls(id_stmt_gard, id_arg) :- potentialGuards(id_stmt_gard), blockStmt(id_block,id_stmt_gard), potentialGuardCalls(id_stmt_gard_2,id_arg), blockStmt(id_block_2,id_stmt_gard_2), branch(_,_,id_block_2,_,id_block,_). // the two last lines are necessary for recursiveness of the process (embedded branches with guards in each block)
-potentialGuardCalls(id_stmt_gard, id_arg) :- potentialGuards(id_stmt_gard), blockStmt(id_block,id_stmt_gard), goto(id_transfer,_,id_block), transferArgument(id_transfer,id_arg,_).
-// TODO: are there other similar situations than with Jump or Branch? Goto?
-
-
-untrustedVariablesBeforeGuard(id, id_stmt_gard, id_arg_of_guard_block) :- potentialGuardCalls(id_stmt_gard, id_arg_of_guard_block), blockStmt(id_block, id_stmt_gard), untrustedVariables(id,id_stmt_gard, id_arg_of_guard_block), blockStmt(id_block, id), !containsSender(id). // "!containsSender(id)" because we suppose here that we trust the sender, in order to see if the guard is tainted by something else (if it is not, then the guard is valid)
-untrustedVariablesBeforeGuard(id_arg_of_guard_block, id_stmt_gard, id_arg_of_guard_block) :- potentialGuardCalls(id_stmt_gard, id_arg_of_guard_block), blockStmt(id_block, id_stmt_gard), untrustedVariables(id_arg_of_guard_block,id_stmt_gard, id_arg_of_guard_block), argument(id_arg_of_guard_block,id_block,_), !containsSender(id_arg_of_guard_block). // if the block takes A00 as argument, and we are in the case where we look at a direct call to the function (with A00), then if A00 is not trusted, it is part of the set
-untrustedVariablesBeforeGuard(id_arg_generic, id_stmt_gard, id_arg_of_guard_block) :- potentialGuardCalls(id_stmt_gard, id_arg_of_guard_block), blockStmt(id_block, id_stmt_gard), argument(id_arg_generic,id_block,index), transferArgument(_,id_arg_of_guard_block,index), untrustedVariables(id_arg_of_guard_block,id_stmt_gard, id_arg_of_guard_block), !containsSender(id_arg_generic). // to know if the guard is valid with the argument id_arg_of_guard_block, we "replace" the generic argument of the bloc by it. So if id_arg_of_guard_block is unstrusted, we say that id_arg_generic is generic (because it is the argument id present in the guard)
-untrustedVariablesBeforeGuard(id, id_stmt_gard, id_arg_of_guard_block) :- untrustedVariablesBeforeGuard(id_2, id_stmt_gard, id_arg_of_guard_block), derivesFrom(id,id_2).
-
-untrustedVariablesBeforeGuard(id, id_stmt_gard, id_arg_of_guard_block) :- potentialGuardCalls(id_stmt_gard, id_arg_of_guard_block), blockStmt(id_block, id_stmt_gard), untrustedVariables(id,"000","000"), blockStmt(id_block, id), !containsSender(id). // "!containsSender(id)" because we suppose here that we trust the sender, in order to see if the guard is tainted by something else (if it is not, then the guard is valid)
-untrustedVariablesBeforeGuard(id_arg_of_guard_block, id_stmt_gard, id_arg_of_guard_block) :- potentialGuardCalls(id_stmt_gard, id_arg_of_guard_block), blockStmt(id_block, id_stmt_gard), untrustedVariables(id_arg_of_guard_block,"000","000"), argument(id_arg_of_guard_block,id_block,_), !containsSender(id_arg_of_guard_block). // if the block takes A00 as argument, and we are in the case where we look at a direct call to the function (with A00), then if A00 is not trusted, it is part of the set
-untrustedVariablesBeforeGuard(id_arg_generic, id_stmt_gard, id_arg_of_guard_block) :- potentialGuardCalls(id_stmt_gard, id_arg_of_guard_block), blockStmt(id_block, id_stmt_gard), argument(id_arg_generic,id_block,index), transferArgument(_,id_arg_of_guard_block,index), untrustedVariables(id_arg_of_guard_block,"000","000"), !containsSender(id_arg_generic). // to know if the guard is valid with the argument id_arg_of_guard_block, we "replace" the generic argument of the bloc by it. So if id_arg_of_guard_block is unstrusted, we say that id_arg_generic is generic (because it is the argument id present in the guard)
-untrustedVariablesBeforeGuard(id, id_stmt_gard, id_arg_of_guard_block) :- untrustedVariablesBeforeGuard(id_2, id_stmt_gard, id_arg_of_guard_block), derivesFrom(id,id_2).
-untrustedVariablesBeforeGuard(id, id_stmt_gard, id_arg_of_guard_block) :- load(id, field), untrustedStateVariablesBeforeGuard(field,id_stmt_gard,id_arg_of_guard_block).
-untrustedVariablesBeforeGuard(id, id_stmt_gard, id_arg_of_guard_block) :- derivesFrom(id,id_2), load(id_2, field), untrustedStateVariablesBeforeGuard(field,id_stmt_gard,id_arg_of_guard_block).
-
-
-invalidGuardCalls(id_stmt_gard, id_arg) :- untrustedVariablesBeforeGuard(id_stmt_gard, id_stmt_gard, id_arg).
-
-
-blocksWithPotentialGuard(id_block,"000") :- potentialGuardCalls(id_stmt,_), blockStmt(id_block, id_stmt).
-blocksWithPotentialGuard(id_block,id_arg) :- goto(_,id_block_guarded,id_block), blocksWithPotentialGuard(id_block_guarded,id_arg).
-blocksWithPotentialGuard(id_block,id_arg) :- branch(_,_,id_block_guarded,id_block,_,id_stmt_condition), blocksWithPotentialGuard(id_block_guarded,id_arg), !potentialGuards(id_block_guarded).
-blocksWithPotentialGuard(id_block,id_arg) :- branch(_,_,id_block_guarded,_,id_block,id_stmt_condition), blocksWithPotentialGuard(id_block_guarded,id_arg), !potentialGuards(id_block_guarded).
-blocksWithPotentialGuard(id_block,id_arg) :- jump(_,id_block_guarded,id_block,_), blocksWithPotentialGuard(id_block_guarded,id_arg).
-blocksWithPotentialGuard(id_block,id_arg) :- jump(_,id_block_guarded,_,id_block), blocksWithPotentialGuard(id_block_guarded,id_arg).
-blocksWithPotentialGuard(id_block,id_arg) :- jump(_,_,id_block_guarded,id_block), blocksWithPotentialGuard(id_block_guarded,id_arg).
-blocksWithPotentialGuard(id_block, id_arg) :- blockStmt(id_block, id_arg), potentialGuardCalls(_, id_arg).//, !invalidGuardCalls(id_stmt_gard, id_arg).
-
-
-.decl statementOrArgument(id: SSA)
-statementOrArgument(id) :- statement(id).
-statementOrArgument(id) :- argument(id,_,_).
-
-
-untrustedBlocks(id_block, "000", "000") :- blockStmt(id_block, id_stmt), untrustedVariables(id_stmt,_,_), !blocksWithPotentialGuard(id_block,_).
-untrustedBlocks(id_block, "000", "000") :- argument(_,id_block,_), !blocksWithPotentialGuard(id_block,_).
-untrustedBlocks(id_block, id_stmt_gard, id_arg_of_guard_block) :- blockStmt(id_block, id_stmt_gard), invalidGuardCalls(id_stmt_gard, id_arg_of_guard_block), !blocksWithPotentialGuard(id_block, id_arg_of_guard_block).
-untrustedBlocks(id_block, id_stmt_gard, id_arg_of_guard_block) :- goto(_,id_block_guarded,id_block), untrustedBlocks(id_block_guarded, id_stmt_gard, id_arg_of_guard_block), !blocksWithPotentialGuard(id_block, id_arg_of_guard_block).
-untrustedBlocks(id_block, id_stmt_gard, id_arg_of_guard_block) :- branch(_,_,id_block_guarded,id_block,_,_), untrustedBlocks(id_block_guarded, id_stmt_gard, id_arg_of_guard_block), !blocksWithPotentialGuard(id_block, id_arg_of_guard_block).
-untrustedBlocks(id_block, id_stmt_gard, id_arg_of_guard_block) :- branch(_,_,id_block_guarded,_,id_block,_), untrustedBlocks(id_block_guarded, id_stmt_gard, id_arg_of_guard_block), !blocksWithPotentialGuard(id_block, id_arg_of_guard_block).
-untrustedBlocks(id_block, id_stmt_gard, id_arg_of_guard_block) :- jump(_,id_block_guarded,id_block,_), untrustedBlocks(id_block_guarded, id_stmt_gard, id_arg_of_guard_block), !blocksWithPotentialGuard(id_block, id_arg_of_guard_block).
-untrustedBlocks(id_block, id_stmt_gard, id_arg_of_guard_block) :- jump(_,id_block_guarded,_,id_block), untrustedBlocks(id_block_guarded, id_stmt_gard, id_arg_of_guard_block), !blocksWithPotentialGuard(id_block, id_arg_of_guard_block).
-untrustedBlocks(id_block, id_stmt_gard, id_arg_of_guard_block) :- jump(id_transfer,_,id_block_guarded,id_block), transferArgument(id_transfer,id_arg_of_guard_block,_), untrustedBlocks(id_block_guarded, id_stmt_gard, id_arg_of_guard_block), !blocksWithPotentialGuard(id_block, id_arg_of_guard_block). // in this case, the untrusted block B returns to another block C, specified when a previous block A called the potentially guarded block B. Therefore, the next block C is untrusted only if B->C is from the same transfer (with the same argument) as A->B, that "made" B unstrusted.
-// TODO: is `jump(id_transfer,_,id_block_guarded,id_block)` the only case that requires to check the id_arg_of_guard_block?
-
-
-untrustedStateVariables(field) :- store(id_stmt, field, id_attributed_stmt), untrustedVariables(id_attributed_stmt,id_stmt_gard,id_arg_of_guard_block), blockStmt(id_block, id_stmt), untrustedBlocks(id_block,id_stmt_gard, id_arg_of_guard_block).
-untrustedStateVariables(field) :- store(id_stmt, field, id_attributed_stmt), untrustedVariables(id_attributed_stmt,"000","000"), blockStmt(id_block, id_stmt), untrustedBlocks(id_block,_,_).
-
-
-untrustedStateVariablesBeforeGuard(field,id_stmt_gard,id_arg_of_guard_block) :- untrustedVariablesBeforeGuard(id_attributed_stmt,id_stmt_gard,id_arg_of_guard_block), store(_, field, id_attributed_stmt).
+// containsCurrentSender(id_stmt, "000") :- function(id_block,_), builtinVariable(id_stmt,"SENDER"), blockStmt(id_block, id_stmt).
+containsCurrentSender(id_stmt, "000") :- builtinVariable(id_stmt,"SENDER"). //"000" stands for "in all contexts"
+containsCurrentSender(id_derived, ctxt) :- containsCurrentSender(ctxt,_), transferArgument(id_transfer, ctxt, index), jump(id_transfer,_,id_block_to,_), argument(id_arg, id_block_to, index), derivesFrom(id_derived, id_arg).
+containsCurrentSender(id_derived, ctxt) :- containsCurrentSender(ctxt,ctxt_previous), transferArgument(id_transfer_return, ctxt, index), return(id_transfer_return,id_block_from), jump(id_transfer_jump,_,id_block_from,id_block_next), transferArgument(id_transfer_jump, ctxt_previous, index), argument(id_arg, id_block_next, index), derivesFrom(id_derived, id_arg).
+containsCurrentSender(id_derived, ctxt) :- containsCurrentSender(ctxt,"000"), transferArgument(id_transfer_return, ctxt, index), return(id_transfer_return,id_block_from), jump(_,_,id_block_from,id_block_next), argument(id_arg, id_block_next, index), derivesFrom(id_derived, id_arg).
+//TODO: change `index` and account for several arguments, by replacing ctxt by a list? 
+containsCurrentSender(id_derived, ctxt) :- derivesFrom(id_derived,id_taint), containsCurrentSender(id_taint, ctxt).
 
 
 //_________________________________________________________
 // OUTPUT
 //_________________________________________________________
 
-.output selfdestruct
 .output tainted_sinks
-//.output derivesFrom
-.output containsSender
-.output potentialGuardConditions
-.output potentialGuards
-
-.output untrustedVariables
-.output untrustedStateVariables
-.output untrustedBlocks
-.output untrustedVariablesBeforeGuard
-.output untrustedStateVariablesBeforeGuard
-.output potentialGuardCalls
-.output invalidGuardCalls
-.output blocksWithPotentialGuard
+.output containsCurrentSender

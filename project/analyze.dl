@@ -125,7 +125,7 @@ msgSender(id) :- builtinVariable(id, "SENDER").
 
 .decl tainted_sinks(id: SSA)
 .decl derivesFrom(id_derived: SSA, id_taint: SSA) 
-.decl containsCurrentSender(id_stmt: SSA, ctxt: SSA)
+.decl containsSender(id_stmt: SSA, ctxt: SSA)
 
 .decl trustedVariables(id: SSA, ctxt: SSA)
 .decl trustedGuards(id: SSA, ctxt: SSA)
@@ -143,17 +143,15 @@ derivesFrom(id_derived, id_taint) :- bop(id_derived,id_taint,_,_).
 derivesFrom(id_derived, id_taint) :- bop(id_derived,_,id_taint,_).
 derivesFrom(id_derived, id_taint) :- branch(_,_,_,id_block,_,id_taint), blockStmt(id_block, id_derived). // implicit dependency
 derivesFrom(id_derived, id_taint) :- branch(_,_,_,_,id_block,id_taint), blockStmt(id_block, id_derived). // implicit dependency
-derivesFrom(id_derived, id_taint) :- goto(id_transfer,_,id_block_to), transferArgument(id_transfer,id_taint,index), argument(id_derived,id_block_to,index). // derivation through arguments after a goto
+derivesFrom(id_derived, id_taint) :- goto(id_transfer,_,id_block_to), transferArgument(id_transfer,id_taint,index), argument(id_arg,id_block_to,index), derivesFrom(id_derived, id_arg). // derivation through arguments after a goto (after a branch)
 derivesFrom(id_derived, id_taint) :- selfdestruct(id_derived, id_taint).
 derivesFrom(id_derived, id_taint) :- derivesFrom(id_intermediary, id_taint), derivesFrom(id_derived, id_intermediary).
 
-// containsCurrentSender(id_stmt, "000") :- function(id_block,_), builtinVariable(id_stmt,"SENDER"), blockStmt(id_block, id_stmt).
-containsCurrentSender(id_stmt, "000") :- builtinVariable(id_stmt,"SENDER"). //"000" stands for "in all contexts"
-containsCurrentSender(id_derived, ctxt) :- containsCurrentSender(ctxt,_), transferArgument(id_transfer, ctxt, index), jump(id_transfer,_,id_block_to,_), argument(id_arg, id_block_to, index), derivesFrom(id_derived, id_arg).
-containsCurrentSender(id_derived, ctxt) :- containsCurrentSender(ctxt,ctxt_previous), transferArgument(id_transfer_return, ctxt, index), return(id_transfer_return,id_block_from), jump(id_transfer_jump,_,id_block_from,id_block_next), transferArgument(id_transfer_jump, ctxt_previous, index), argument(id_arg, id_block_next, index), derivesFrom(id_derived, id_arg).
-containsCurrentSender(id_derived, ctxt) :- containsCurrentSender(ctxt,"000"), transferArgument(id_transfer_return, ctxt, index), return(id_transfer_return,id_block_from), jump(_,_,id_block_from,id_block_next), argument(id_arg, id_block_next, index), derivesFrom(id_derived, id_arg).
-//TODO: change `index` and account for several arguments, by replacing ctxt by a list? 
-containsCurrentSender(id_derived, ctxt) :- derivesFrom(id_derived,id_taint), containsCurrentSender(id_taint, ctxt).
+containsSender(id_stmt, "000") :- builtinVariable(id_stmt,"SENDER"). //"000" stands for "in all contexts"
+containsSender(id_derived, ctxt) :- containsSender(ctxt,_), transferArgument(id_transfer, ctxt, index), jump(id_transfer,_,id_block_to,_), argument(id_arg, id_block_to, index), derivesFrom(id_derived, id_arg). //function call when the argument depends on msg.sender
+containsSender(id_derived, ctxt) :- containsSender(ctxt,ctxt_previous), transferArgument(id_transfer_return, ctxt, index), return(id_transfer_return,id_block_from), jump(id_transfer_jump,_,id_block_from,id_block_next), transferArgument(id_transfer_jump, ctxt_previous,_), argument(id_arg, id_block_next, index), derivesFrom(id_derived, id_arg). // return after a function call: if the result value depends on msg.sender, then the block to which we return to knows it
+containsSender(id_derived, ctxt) :- containsSender(ctxt,"000"), transferArgument(id_transfer_return, ctxt, index), return(id_transfer_return,id_block_from), jump(_,_,id_block_from,id_block_next), argument(id_arg, id_block_next, index), derivesFrom(id_derived, id_arg). // same as before but the return value depends on msg.sender independently of the function input
+containsSender(id_derived, ctxt) :- derivesFrom(id_derived,id_taint), containsSender(id_taint, ctxt).
 
 
 //_________________________________________________________
@@ -161,4 +159,4 @@ containsCurrentSender(id_derived, ctxt) :- derivesFrom(id_derived,id_taint), con
 //_________________________________________________________
 
 .output tainted_sinks
-.output containsCurrentSender
+.output containsSender

@@ -124,7 +124,11 @@ msgSender(id) :- builtinVariable(id, "SENDER").
 //_________________________________________________________
 
 .decl tainted_sinks(id: SSA)
-.decl derivesFrom(id_derived: SSA, id_taint: SSA) 
+
+// PART 1: find variables that depend on msg.sender
+.decl derivesFrom(id_derived: SSA, id_taint: SSA) // independently of context, tells you if some variable depends on another through basic (explicit) operations or through implicit branching  
+.decl contextSenderChain(new_ctxt: SSA, old_ctxt: SSA) // recursive dependencies of contexts
+.decl blockChain(return_block: Block, entry_block: Block) // contains blocks that are linked by jump/branch/goto: it corresponds to chain of blocks linked by arrows on the --visualize schema
 .decl containsSender(id_stmt: SSA, ctxt: SSA)
 
 .decl trustedVariables(id: SSA, ctxt: SSA)
@@ -143,14 +147,23 @@ derivesFrom(id_derived, id_taint) :- bop(id_derived,id_taint,_,_).
 derivesFrom(id_derived, id_taint) :- bop(id_derived,_,id_taint,_).
 derivesFrom(id_derived, id_taint) :- branch(_,_,_,id_block,_,id_taint), blockStmt(id_block, id_derived). // implicit dependency
 derivesFrom(id_derived, id_taint) :- branch(_,_,_,_,id_block,id_taint), blockStmt(id_block, id_derived). // implicit dependency
-derivesFrom(id_derived, id_taint) :- goto(id_transfer,_,id_block_to), transferArgument(id_transfer,id_taint,index), argument(id_arg,id_block_to,index), derivesFrom(id_derived, id_arg). // derivation through arguments after a goto (after a branch)
+derivesFrom(id_derived, id_taint) :- goto(id_transfer,_,id_block_to), transferArgument(id_transfer,id_taint,index), argument(id_derived,id_block_to,index). // derivation through arguments after a goto (after a branch)
 derivesFrom(id_derived, id_taint) :- selfdestruct(id_derived, id_taint).
 derivesFrom(id_derived, id_taint) :- derivesFrom(id_intermediary, id_taint), derivesFrom(id_derived, id_intermediary).
 
+contextSenderChain(new_ctxt, old_ctxt) :- containsSender(new_ctxt, old_ctxt).
+contextSenderChain(new_ctxt, old_ctxt) :- containsSender(new_ctxt, ctxt), contextSenderChain(ctxt, old_ctxt).
+
+blockChain(return_block, return_block) :- return(_,return_block).
+blockChain(return_block, entry_block) :- blockChain(return_block, block), jump(_,entry_block,_,block).
+blockChain(return_block, entry_block) :- blockChain(return_block, block), goto(_,entry_block,block).
+blockChain(return_block, entry_block) :- blockChain(return_block, block), branch(_,_,entry_block,block,_,_).
+blockChain(return_block, entry_block) :- blockChain(return_block, block), branch(_,_,entry_block,_,block,_).
+
 containsSender(id_stmt, "000") :- builtinVariable(id_stmt,"SENDER"). //"000" stands for "in all contexts"
-containsSender(id_derived, ctxt) :- containsSender(ctxt,_), transferArgument(id_transfer, ctxt, index), jump(id_transfer,_,id_block_to,_), argument(id_arg, id_block_to, index), derivesFrom(id_derived, id_arg). //function call when the argument depends on msg.sender
-containsSender(id_derived, ctxt) :- containsSender(ctxt,ctxt_previous), transferArgument(id_transfer_return, ctxt, index), return(id_transfer_return,id_block_from), jump(id_transfer_jump,_,id_block_from,id_block_next), transferArgument(id_transfer_jump, ctxt_previous,_), argument(id_arg, id_block_next, index), derivesFrom(id_derived, id_arg). // return after a function call: if the result value depends on msg.sender, then the block to which we return to knows it
-containsSender(id_derived, ctxt) :- containsSender(ctxt,"000"), transferArgument(id_transfer_return, ctxt, index), return(id_transfer_return,id_block_from), jump(_,_,id_block_from,id_block_next), argument(id_arg, id_block_next, index), derivesFrom(id_derived, id_arg). // same as before but the return value depends on msg.sender independently of the function input
+containsSender(id_derived, ctxt) :- containsSender(ctxt,_), transferArgument(id_transfer, ctxt, index), jump(id_transfer,_,id_block_to,_), argument(id_derived, id_block_to, index). //function call when the argument depends on msg.sender
+containsSender(id_derived, ctxt) :- contextSenderChain(ctxt,ctxt_previous), transferArgument(id_transfer_return, ctxt, index), return(id_transfer_return,id_block_return), blockChain(id_block_return, id_block_entry), jump(id_transfer_jump,_,id_block_entry,id_block_next), transferArgument(id_transfer_jump, ctxt_previous,_), argument(id_derived, id_block_next, index). // return after a function call: if the result value depends on msg.sender, then the block to which we return to knows it. `blockChain`is necessary as shown on example `transferSender.sol`
+containsSender(id_derived, ctxt) :- containsSender(ctxt,"000"), transferArgument(id_transfer_return, ctxt, index), return(id_transfer_return,id_block_return), blockChain(id_block_return, id_block_entry), jump(id_transfer_jump,_,id_block_entry,id_block_next), transferArgument(id_transfer_jump, ctxt_previous,_), argument(id_derived, id_block_next, index). // same as above but the return value depends on msg.sender independently of the function input
 containsSender(id_derived, ctxt) :- derivesFrom(id_derived,id_taint), containsSender(id_taint, ctxt).
 
 
@@ -160,3 +173,6 @@ containsSender(id_derived, ctxt) :- derivesFrom(id_derived,id_taint), containsSe
 
 .output tainted_sinks
 .output containsSender
+.output argument
+//.output contextSenderChain
+.output blockChain

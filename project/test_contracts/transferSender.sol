@@ -2,9 +2,18 @@ pragma solidity ^0.5.0;
 
 contract Contract {
   address owner;
-  function check(address x, address x2) public returns(bool,bool) {
+
+  function identity(address x) public returns(address) {
     address y = x;
-    address y2 = x2;
+    return y;
+  }
+
+  function check(address x, address x2) public returns(bool,bool) {
+    address x = x;
+    address x2 = x2;
+    address y = identity(x);
+    address y2 = identity(x2);
+    if (true) {}
     return ((y2 == y2), (y == y));
   }
   function foo() public {

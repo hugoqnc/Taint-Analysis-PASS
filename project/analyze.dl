@@ -131,14 +131,15 @@ msgSender(id) :- builtinVariable(id, "SENDER").
 .decl blockChain(return_block: Block, entry_block: Block) // contains blocks that are linked by jump/branch/goto: it corresponds to chain of blocks linked by arrows on the --visualize schema
 .decl containsSender(id_stmt: SSA, ctxt: SSA)
 
-// PART 2: find state variables that are trusted
-.decl contextsOfStoredVariables(id_stmt: SSA, ctxt: SSA) // find all possible contexts for the execution of a `store` statement
-.decl stateVariableTrustStatus(field: Name, n_store: number, n_trusted_store: number) // small helper to compute trustedStateVariables
-.decl trustedStateVariables(field: Name)
+// .decl contextUntrustedVariablesChain(new_ctxt: SSA, old_ctxt: SSA) 
+.decl allPossibleContexts(id_stmt: SSA, ctxt: SSA)
 
 .decl trustedVariables(id: SSA, ctxt: SSA)
-.decl trustedGuards(id: SSA, ctxt: SSA)
+.decl untrustedVariables(id_stmt: SSA, ctxt: SSA)
+.decl untrustedStateVariables(field: Name)
+.decl validGuards(id: SSA, ctxt: SSA)
 .decl trustedBlocks(id_block: Block, ctxt: SSA)
+// .decl untrustedBlocks(id_block: Block, ctxt: SSA)
 
 //_________________________________________________________
 // LOGIC IMPLEMENTATION
@@ -160,6 +161,7 @@ contextSenderChain(new_ctxt, old_ctxt) :- containsSender(new_ctxt, old_ctxt).
 contextSenderChain(new_ctxt, old_ctxt) :- containsSender(new_ctxt, ctxt), contextSenderChain(ctxt, old_ctxt).
 
 blockChain(return_block, return_block) :- return(_,return_block).
+blockChain(return_block, return_block) :- revert(_,return_block).
 blockChain(return_block, entry_block) :- blockChain(return_block, block), jump(_,entry_block,_,block).
 blockChain(return_block, entry_block) :- blockChain(return_block, block), goto(_,entry_block,block).
 blockChain(return_block, entry_block) :- blockChain(return_block, block), branch(_,_,entry_block,block,_,_).
@@ -172,24 +174,41 @@ containsSender(id_derived, ctxt) :- containsSender(ctxt,"000"), transferArgument
 containsSender(id_derived, ctxt) :- derivesFrom(id_derived,id_taint), containsSender(id_taint, ctxt).
 
 
-contextsOfStoredVariables(id_stmt,"000") :- store(id_stmt,_,_), blockStmt(id_block,id_stmt), function(id_block,_). // when store can is in a user-callable function
-contextsOfStoredVariables(id_stmt,ctxt) :- store(id_stmt,_,_), blockStmt(id_block_store,id_stmt), transferArgument(id_transfer, ctxt, _), jump(id_transfer,_,id_block_entry,_), blockChain(id_block_return, id_block_entry), blockChain(id_block_return, id_block_store). // when store is called by another function
-contextsOfStoredVariables(id_stmt,ctxt) :- store(id_stmt,_,_), blockStmt(id_block_store,id_stmt), transferArgument(id_transfer_return, ctxt, _), return(id_transfer_return,id_block_return), blockChain(id_block_return, id_block_entry), jump(id_transfer,_,id_block_entry,id_block_entry_1), blockChain(id_block_return_1, id_block_entry_1), blockChain(id_block_return_1, id_block_store). // when store is called after another called function has returned
-contextsOfStoredVariables(id_stmt,"000") :- store(id_stmt,_,_), blockStmt(id_block_store,id_stmt), !transferArgument(id_transfer_return,_,_), return(id_transfer_return,id_block_return), blockChain(id_block_return, id_block_entry), jump(id_transfer,_,id_block_entry,id_block_entry_1), blockChain(id_block_return_1, id_block_entry_1), blockChain(id_block_return_1, id_block_store), function(id_block_entry_2,_), blockChain(id_block_return_2, id_block_store). // when store is called after another called function that does not return
-//TODO: what happens for function call without arguments? 
-
-stateVariableTrustStatus(field,n_store,n_trusted_store) :- load(_,field), n_store=count:{store(id_stmt,field,_), contextsOfStoredVariables(id_stmt,ctxt)}, n_trusted_store=count:{store(_,field,id_arg), trustedVariables(id_arg,ctxt)}.
-
-trustedStateVariables(field) :- stateVariableTrustStatus(field,n_store,n_trusted_store), n_store=n_trusted_store.
-
 
 trustedVariables(id_stmt, "000") :- const(id_stmt,_).
 trustedVariables(id_stmt, ctxt) :- assign(id_stmt,id_stmt_before), trustedVariables(id_stmt_before, ctxt).
 trustedVariables(id_stmt, ctxt) :- uop(id_stmt,id_stmt_before,_), trustedVariables(id_stmt_before, ctxt).
 trustedVariables(id_stmt, ctxt) :- bop(id_stmt,id_stmt_before_1,id_stmt_before_2,_), trustedVariables(id_stmt_before_1, ctxt), trustedVariables(id_stmt_before_2, ctxt).
-//trustedVariables(id_stmt, "000") :- load(id_stmt,field), trustedStateVariables(field).
-trustedVariables(id_stmt, ctxt) :- trustedVariables(ctxt,_), transferArgument(id_transfer, ctxt, index), jump(id_transfer,_,id_block_to,_), argument(id_stmt, id_block_to, index).
+trustedVariables(id_stmt, ctxt) :- store(id_stmt,_,id_stmt_before), trustedVariables(id_stmt_before, ctxt).
+//trustedVariables(id_stmt, ctxt) :- trustedVariables(ctxt,_), transferArgument(id_transfer, ctxt, index), jump(id_transfer,_,id_block_to,_), argument(id_stmt, id_block_to, index).
+//TODO: add what come from trusted state variables
+//TODO: everything should be only in trusted blocks
+// trustedVariables(id_stmt, ctxt) :- load(id_stmt,field), !untrustedStateVariables(field), allPossibleContexts(id_stmt,ctxt).
+//trustedVariables(id_stmt, ctxt) :- allPossibleContexts(id_stmt,ctxt), !untrustedVariables(id_stmt, ctxt).
 
+// contextUntrustedVariablesChain(new_ctxt, old_ctxt) :- untrustedVariables(new_ctxt, old_ctxt).
+// contextUntrustedVariablesChain(new_ctxt, old_ctxt) :- untrustedVariables(new_ctxt, ctxt), contextUntrustedVariablesChain(ctxt, old_ctxt).
+
+// untrustedVariables(id_stmt, "000") :- builtinVariable(id_stmt,_). //"000" stands for "in all contexts"
+// untrustedVariables(id_stmt, "000") :- argument(id_stmt,id_block,_), function(id_block,_).
+// untrustedVariables(id_derived, ctxt) :- untrustedVariables(ctxt,_), transferArgument(id_transfer, ctxt, index), jump(id_transfer,_,id_block_to,_), argument(id_derived, id_block_to, index). //function call when the argument depends on msg.sender
+// untrustedVariables(id_derived, ctxt) :- contextUntrustedVariablesChain(ctxt,ctxt_previous), transferArgument(id_transfer_return, ctxt, index), return(id_transfer_return,id_block_return), blockChain(id_block_return, id_block_entry), jump(id_transfer_jump,_,id_block_entry,id_block_next), transferArgument(id_transfer_jump, ctxt_previous,_), argument(id_derived, id_block_next, index). // return after a function call: if the result value depends on msg.sender, then the block to which we return to knows it. `blockChain`is necessary as shown on example `transferSender.sol`
+// untrustedVariables(id_derived, ctxt) :- untrustedVariables(ctxt,"000"), transferArgument(id_transfer_return, ctxt, index), return(id_transfer_return,id_block_return), blockChain(id_block_return, id_block_entry), jump(id_transfer_jump,_,id_block_entry,id_block_next), transferArgument(id_transfer_jump, ctxt_previous,_), argument(id_derived, id_block_next, index). // same as above but the return value depends on msg.sender independently of the function input
+// untrustedVariables(id_derived, ctxt) :- derivesFrom(id_derived,id_taint), untrustedVariables(id_taint, ctxt).
+// //TODO: add what come from untrusted state variables
+// //TODO: everything should be only in unstrusted blocks
+
+
+allPossibleContexts(id_stmt,"000") :- blockStmt(id_block,id_stmt), function(id_block,_). // when the statement is in a user-callable function
+allPossibleContexts(id_stmt,ctxt) :- blockStmt(id_block,id_stmt), transferArgument(id_transfer, ctxt, _), jump(id_transfer,_,id_block_entry,_), blockChain(id_block_return, id_block_entry), blockChain(id_block_return, id_block). // when the statement is called by another function
+allPossibleContexts(id_stmt,ctxt) :- blockStmt(id_block,id_stmt), transferArgument(id_transfer_return, ctxt, _), return(id_transfer_return,id_block_return), blockChain(id_block_return, id_block_entry), jump(id_transfer,_,id_block_entry,id_block_entry_1), blockChain(id_block_return_1, id_block_entry_1), blockChain(id_block_return_1, id_block). // when the statement is called after another called function has returned
+allPossibleContexts(id_stmt,"000") :- blockStmt(id_block,id_stmt), !transferArgument(id_transfer_return,_,_), return(id_transfer_return,id_block_return), blockChain(id_block_return, id_block_entry), jump(id_transfer,_,id_block_entry,id_block_entry_1), blockChain(id_block_return_1, id_block_entry_1), blockChain(id_block_return_1, id_block), function(id_block_entry_2,_), blockChain(id_block_return_2, id_block). // when the statement is called after another called function that does not return
+
+untrustedVariables(id_stmt, ctxt) :- allPossibleContexts(id_stmt,ctxt), !trustedVariables(id_stmt,ctxt).
+untrustedVariables(id_stmt, ctxt) :- load(id_stmt,field), untrustedStateVariables(field), allPossibleContexts(id_stmt,ctxt).
+
+
+untrustedStateVariables(field) :- store(_, field, id_attributed_stmt), untrustedVariables(id_attributed_stmt,_).
 
 //_________________________________________________________
 // OUTPUT
@@ -201,6 +220,9 @@ trustedVariables(id_stmt, ctxt) :- trustedVariables(ctxt,_), transferArgument(id
 //.output contextSenderChain
 .output blockChain
 .output trustedVariables
-.output trustedStateVariables
-.output contextsOfStoredVariables
-.output stateVariableTrustStatus
+// .output trustedStateVariables
+// .output contextsOfStoredVariables
+// .output stateVariableTrustStatus
+.output untrustedVariables
+.output untrustedStateVariables
+.output allPossibleContexts

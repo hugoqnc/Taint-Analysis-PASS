@@ -173,14 +173,20 @@ blockChain(id_block_start, id_block_next) :- blockChain(id_block_start, id_block
 containsSender(id_stmt, "UCall") :- builtinVariable(id_stmt,"SENDER"). // "UCall" means that the statement contains sender when its function is called by the user.
 containsSender(id_derived, ctxt) :- containsSender(ctxt,_), transferArgument(id_transfer, ctxt, index), jump(id_transfer,_,id_block_to,_), argument(id_derived, id_block_to, index). // function call when the argument depends on msg.sender
 containsSender(id_derived, ctxt_previous) :- containsSender(id_stmt_return,ctxt), containsSender(ctxt,ctxt_previous), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt,_), argument(id_derived, id_block_next, index). // return after a function call: if the result value depends on msg.sender, then the block to which we return to knows it. `blockChain`is necessary as shown on example `transferSender.sol`
-containsSender(id_derived, "UserCall") :- containsSender(id_stmt_return,"UCall"), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(_,_,id_block_start,id_block_next), argument(id_derived, id_block_next, index). // same as above but the return value depends on msg.sender independently of the function input
+containsSender(id_derived, "UCall") :- containsSender(id_stmt_return,"UCall"), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(_,_,id_block_start,id_block_next), argument(id_derived, id_block_next, index). // same as above but the return value depends on msg.sender independently of the function input
 containsSender(id_derived, ctxt) :- derivesFrom(id_derived,id_taint), containsSender(id_taint, ctxt).
 
 
+
 // Get potential guards
-// potentialGuardStatements(id_stmt) :- potentialGuardConditions(id_stmt), branch(_,_,_,_,_,id_stmt). // potential guard if it is the condition of a branch
-// potentialGuardStatements(id_stmt) :- potentialGuardConditions(id_stmt), transferArgument(id_transfer,id_stmt,_), return(id_transfer,id_block), jump(_,_,id_block,id_block_next), branch(_,_,id_block_next,_,_,id_condition), argument(id_condition,id_block_next,_). 
-// potentialGuardStatements(id_stmt) :- potentialGuardConditions(id_stmt), transferArgument(id_transfer,id_stmt,_), return(id_transfer,_), jump(_,_,_,id_block_next), branch(_,_,id_block_next,_,_,id_condition), argument(id_condition,id_block_next,_).
+potentialGuards(id_stmt, ctxt) :- 
+    (
+        containsSender(id_stmt, ctxt), branch(_,_,_,_,_,id_stmt); // potential guard if it is the condition of a branch
+        containsSender(id_stmt, ctxt), transferArgument(id_transfer,id_stmt,_), return(id_transfer,id_block), jump(_,_,id_block,id_block_next), branch(_,_,id_block_next,_,_,id_condition), argument(id_condition,id_block_next,_);
+        containsSender(id_stmt, ctxt), transferArgument(id_transfer,id_stmt,_), return(id_transfer,_), jump(_,_,_,id_block_next), branch(_,_,id_block_next,_,_,id_condition), argument(id_condition,id_block_next,_)
+    ),
+    !invalidGuards(id_stmt, ctxt).
+
 
 // Get invalid guards from previous untrusted variables
 
@@ -197,3 +203,4 @@ containsSender(id_derived, ctxt) :- derivesFrom(id_derived,id_taint), containsSe
 .output untrustedVariables
 .output untrustedStateVariables
 .output previousUntrustedVariables
+.output potentialGuards

@@ -14,6 +14,7 @@ contract Contract {
     address y = identity(x);
     address y2 = identity(x2);
     if (true) {}
+    address m = msg.sender;
     return ((y2 == y2), (y == y));
   }
   function foo() public {

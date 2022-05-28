@@ -82,7 +82,7 @@
 .decl revert(id_transfer: Transfer, id_block: Block)
 .decl builtinVariable(id: SSA, name: symbol)
 
-.decl testInput(id_block: Block, id_block_2: Block)
+.decl previousUntrustedVariables(id_stmt: SSA, ctxt: SSA)
 
 #ifdef ENABLE_INPUT_FROM_FILES
 .input function
@@ -107,7 +107,8 @@
 .input selfdestruct
 .input revert
 .input builtinVariable
-.input testInput(IO=file, filename="../facts_out/blockChain.csv")
+.input previousUntrustedVariables(IO=file, filename="../facts_out/untrustedVariables.csv")
+
 // Ignore these...
 //.input arrayLoad
 //.input mapLoad
@@ -131,15 +132,16 @@ msgSender(id) :- builtinVariable(id, "SENDER").
 // PART 1: find variables that depend on msg.sender
 .decl derivesFrom(id_derived: SSA, id_taint: SSA) // independently of context, tells you if some variable depends on another through basic (explicit) operations or through implicit branching  
 .decl contextSenderChain(new_ctxt: SSA, old_ctxt: SSA) // recursive dependencies of contexts
-.decl blockChain(return_block: Block, entry_block: Block) // contains blocks that are linked by jump/branch/goto: it corresponds to chain of blocks linked by arrows on the --visualize schema
+.decl blockChain(id_block_start: Block, id_block: Block) // contains blocks that are linked by jump/branch/goto: it corresponds to chain of blocks linked by arrows on the --visualize schema. id_block_start is a block that is a callable function.
 .decl containsSender(id_stmt: SSA, ctxt: SSA)
 
+.decl potentialGuards(id_stmt: SSA, ctxt: SSA)
+.decl invalidGuards(id_stmt: SSA, ctxt: SSA)
+
+.decl potentialUntrustedVariablesForGuard(id_stmt_guard: SSA, ctxt: SSA, id_stmt_var: SSA)
 .decl untrustedVariables(id_stmt: SSA, ctxt: SSA)
 .decl untrustedStateVariables(field: Name)
 .decl untrustedBlocks(id_block: Block, ctxt: SSA)
-.decl potentialGuards(id_stmt: SSA, ctxt: SSA)
-.decl invalidGuards(id_stmt: SSA, ctxt: SSA)
-.decl potentialUntrustedVariablesForGuard(id_stmt_guard: SSA, ctxt: SSA, id_stmt_var: SSA)
 
 //_________________________________________________________
 // LOGIC IMPLEMENTATION
@@ -147,6 +149,8 @@ msgSender(id) :- builtinVariable(id, "SENDER").
 
 //tainted_sinks(id) :- selfdestruct(id,id_taint).
 
+
+// Get variables that derives from msg.sender in all contexts
 derivesFrom(id_derived, id_taint) :- assign(id_derived,id_taint).
 derivesFrom(id_derived, id_taint) :- uop(id_derived,id_taint,_).
 derivesFrom(id_derived, id_taint) :- bop(id_derived,id_taint,_,_).
@@ -160,18 +164,25 @@ derivesFrom(id_derived, id_taint) :- derivesFrom(id_intermediary, id_taint), der
 contextSenderChain(new_ctxt, old_ctxt) :- containsSender(new_ctxt, old_ctxt).
 contextSenderChain(new_ctxt, old_ctxt) :- containsSender(new_ctxt, ctxt), contextSenderChain(ctxt, old_ctxt).
 
-blockChain(return_block, return_block) :- return(_,return_block).
-blockChain(return_block, return_block) :- revert(_,return_block).
-blockChain(return_block, entry_block) :- blockChain(return_block, block), jump(_,entry_block,_,block).
-blockChain(return_block, entry_block) :- blockChain(return_block, block), goto(_,entry_block,block).
-blockChain(return_block, entry_block) :- blockChain(return_block, block), branch(_,_,entry_block,block,_,_).
-blockChain(return_block, entry_block) :- blockChain(return_block, block), branch(_,_,entry_block,_,block,_).
+blockChain(id_block, id_block) :- function(id_block,_).
+blockChain(id_block_start, id_block_next) :- blockChain(id_block_start, id_block), jump(_,id_block,_,id_block_next).
+blockChain(id_block_start, id_block_next) :- blockChain(id_block_start, id_block), goto(_,id_block,id_block_next).
+blockChain(id_block_start, id_block_next) :- blockChain(id_block_start, id_block), branch(_,_,id_block,id_block_next,_,_).
+blockChain(id_block_start, id_block_next) :- blockChain(id_block_start, id_block), branch(_,_,id_block,_,id_block_next,_).
 
-containsSender(id_stmt, "000") :- builtinVariable(id_stmt,"SENDER"). //"000" stands for "in all contexts"
-containsSender(id_derived, ctxt) :- containsSender(ctxt,_), transferArgument(id_transfer, ctxt, index), jump(id_transfer,_,id_block_to,_), argument(id_derived, id_block_to, index). //function call when the argument depends on msg.sender
-containsSender(id_derived, ctxt) :- contextSenderChain(ctxt,ctxt_previous), transferArgument(id_transfer_return, ctxt, index), return(id_transfer_return,id_block_return), blockChain(id_block_return, id_block_entry), jump(id_transfer_jump,_,id_block_entry,id_block_next), transferArgument(id_transfer_jump, ctxt_previous,_), argument(id_derived, id_block_next, index). // return after a function call: if the result value depends on msg.sender, then the block to which we return to knows it. `blockChain`is necessary as shown on example `transferSender.sol`
-containsSender(id_derived, ctxt) :- containsSender(ctxt,"000"), transferArgument(id_transfer_return, ctxt, index), return(id_transfer_return,id_block_return), blockChain(id_block_return, id_block_entry), jump(id_transfer_jump,_,id_block_entry,id_block_next), transferArgument(id_transfer_jump, ctxt_previous,_), argument(id_derived, id_block_next, index). // same as above but the return value depends on msg.sender independently of the function input
+containsSender(id_stmt, "UCall") :- builtinVariable(id_stmt,"SENDER"). // "UCall" means that the statement contains sender when its function is called by the user.
+containsSender(id_derived, ctxt) :- containsSender(ctxt,_), transferArgument(id_transfer, ctxt, index), jump(id_transfer,_,id_block_to,_), argument(id_derived, id_block_to, index). // function call when the argument depends on msg.sender
+containsSender(id_derived, ctxt_previous) :- containsSender(id_stmt_return,ctxt), containsSender(ctxt,ctxt_previous), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt,_), argument(id_derived, id_block_next, index). // return after a function call: if the result value depends on msg.sender, then the block to which we return to knows it. `blockChain`is necessary as shown on example `transferSender.sol`
+containsSender(id_derived, "UserCall") :- containsSender(id_stmt_return,"UCall"), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(_,_,id_block_start,id_block_next), argument(id_derived, id_block_next, index). // same as above but the return value depends on msg.sender independently of the function input
 containsSender(id_derived, ctxt) :- derivesFrom(id_derived,id_taint), containsSender(id_taint, ctxt).
+
+
+// Get potential guards
+// potentialGuardStatements(id_stmt) :- potentialGuardConditions(id_stmt), branch(_,_,_,_,_,id_stmt). // potential guard if it is the condition of a branch
+// potentialGuardStatements(id_stmt) :- potentialGuardConditions(id_stmt), transferArgument(id_transfer,id_stmt,_), return(id_transfer,id_block), jump(_,_,id_block,id_block_next), branch(_,_,id_block_next,_,_,id_condition), argument(id_condition,id_block_next,_). 
+// potentialGuardStatements(id_stmt) :- potentialGuardConditions(id_stmt), transferArgument(id_transfer,id_stmt,_), return(id_transfer,_), jump(_,_,_,id_block_next), branch(_,_,id_block_next,_,_,id_condition), argument(id_condition,id_block_next,_).
+
+// Get invalid guards from previous untrusted variables
 
 
 
@@ -185,4 +196,4 @@ containsSender(id_derived, ctxt) :- derivesFrom(id_derived,id_taint), containsSe
 .output blockChain
 .output untrustedVariables
 .output untrustedStateVariables
-.output testInput
+.output previousUntrustedVariables

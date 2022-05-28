@@ -26,7 +26,9 @@ contract Contract {
     if (msg.sender == msg.sender) {
       a = address(0xDEADB00F);
     }
-    (bool b, bool b2) = check(owner, a);           
+    (bool b, bool b2) = check(owner, a);
+    require(b);
+    require(b2);       
     selfdestruct(msg.sender);     
   }
 }

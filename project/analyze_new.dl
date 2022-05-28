@@ -82,6 +82,8 @@
 .decl revert(id_transfer: Transfer, id_block: Block)
 .decl builtinVariable(id: SSA, name: symbol)
 
+.decl testInput(id_block: Block, id_block_2: Block)
+
 #ifdef ENABLE_INPUT_FROM_FILES
 .input function
 .input block
@@ -105,6 +107,7 @@
 .input selfdestruct
 .input revert
 .input builtinVariable
+.input testInput(IO=file, filename="../facts_out/blockChain.csv")
 // Ignore these...
 //.input arrayLoad
 //.input mapLoad
@@ -131,21 +134,18 @@ msgSender(id) :- builtinVariable(id, "SENDER").
 .decl blockChain(return_block: Block, entry_block: Block) // contains blocks that are linked by jump/branch/goto: it corresponds to chain of blocks linked by arrows on the --visualize schema
 .decl containsSender(id_stmt: SSA, ctxt: SSA)
 
-// .decl contextUntrustedVariablesChain(new_ctxt: SSA, old_ctxt: SSA) 
-.decl allPossibleContexts(id_stmt: SSA, ctxt: SSA)
-
-.decl trustedVariables(id: SSA, ctxt: SSA)
 .decl untrustedVariables(id_stmt: SSA, ctxt: SSA)
 .decl untrustedStateVariables(field: Name)
-.decl validGuards(id: SSA, ctxt: SSA)
-.decl trustedBlocks(id_block: Block, ctxt: SSA)
-// .decl untrustedBlocks(id_block: Block, ctxt: SSA)
+.decl untrustedBlocks(id_block: Block, ctxt: SSA)
+.decl potentialGuards(id_stmt: SSA, ctxt: SSA)
+.decl invalidGuards(id_stmt: SSA, ctxt: SSA)
+.decl potentialUntrustedVariablesForGuard(id_stmt_guard: SSA, ctxt: SSA, id_stmt_var: SSA)
 
 //_________________________________________________________
 // LOGIC IMPLEMENTATION
 //_________________________________________________________
 
-//tainted_sinks(id) :- selfdestruct(id,id_taint), !trustedVariables(id,_,_).
+//tainted_sinks(id) :- selfdestruct(id,id_taint).
 
 derivesFrom(id_derived, id_taint) :- assign(id_derived,id_taint).
 derivesFrom(id_derived, id_taint) :- uop(id_derived,id_taint,_).
@@ -175,29 +175,6 @@ containsSender(id_derived, ctxt) :- derivesFrom(id_derived,id_taint), containsSe
 
 
 
-trustedVariables(id_stmt, "000") :- const(id_stmt,_).
-trustedVariables(id_stmt, ctxt) :- assign(id_stmt,id_stmt_before), trustedVariables(id_stmt_before, ctxt).
-trustedVariables(id_stmt, ctxt) :- uop(id_stmt,id_stmt_before,_), trustedVariables(id_stmt_before, ctxt).
-trustedVariables(id_stmt, ctxt) :- bop(id_stmt,id_stmt_before_1,id_stmt_before_2,_), trustedVariables(id_stmt_before_1, ctxt), trustedVariables(id_stmt_before_2, ctxt).
-trustedVariables(id_stmt, ctxt) :- store(id_stmt,_,id_stmt_before), trustedVariables(id_stmt_before, ctxt).
-//trustedVariables(id_stmt, ctxt) :- trustedVariables(ctxt,_), transferArgument(id_transfer, ctxt, index), jump(id_transfer,_,id_block_to,_), argument(id_stmt, id_block_to, index).
-//TODO: add what come from trusted state variables
-//TODO: everything should be only in trusted blocks
-// trustedVariables(id_stmt, ctxt) :- load(id_stmt,field), !untrustedStateVariables(field), allPossibleContexts(id_stmt,ctxt).
-//trustedVariables(id_stmt, ctxt) :- allPossibleContexts(id_stmt,ctxt), !untrustedVariables(id_stmt, ctxt).
-
-
-allPossibleContexts(id_stmt,"000") :- blockStmt(id_block,id_stmt), function(id_block,_). // when the statement is in a user-callable function
-allPossibleContexts(id_stmt,ctxt) :- blockStmt(id_block,id_stmt), transferArgument(id_transfer, ctxt, _), jump(id_transfer,_,id_block_entry,_), blockChain(id_block_return, id_block_entry), blockChain(id_block_return, id_block). // when the statement is called by another function
-allPossibleContexts(id_stmt,ctxt) :- blockStmt(id_block,id_stmt), transferArgument(id_transfer_return, ctxt, _), return(id_transfer_return,id_block_return), blockChain(id_block_return, id_block_entry), jump(id_transfer,_,id_block_entry,id_block_entry_1), blockChain(id_block_return_1, id_block_entry_1), blockChain(id_block_return_1, id_block). // when the statement is called after another called function has returned
-allPossibleContexts(id_stmt,"000") :- blockStmt(id_block,id_stmt), !transferArgument(id_transfer_return,_,_), return(id_transfer_return,id_block_return), blockChain(id_block_return, id_block_entry), jump(id_transfer,_,id_block_entry,id_block_entry_1), blockChain(id_block_return_1, id_block_entry_1), blockChain(id_block_return_1, id_block), function(id_block_entry_2,_), blockChain(id_block_return_2, id_block). // when the statement is called after another called function that does not return
-
-untrustedVariables(id_stmt, ctxt) :- allPossibleContexts(id_stmt,ctxt), !trustedVariables(id_stmt,ctxt).
-untrustedVariables(id_stmt, ctxt) :- load(id_stmt,field), untrustedStateVariables(field), allPossibleContexts(id_stmt,ctxt).
-
-
-untrustedStateVariables(field) :- store(_, field, id_attributed_stmt), untrustedVariables(id_attributed_stmt,_).
-
 //_________________________________________________________
 // OUTPUT
 //_________________________________________________________
@@ -205,13 +182,7 @@ untrustedStateVariables(field) :- store(_, field, id_attributed_stmt), untrusted
 .output tainted_sinks
 .output containsSender
 .output argument
-//.output contextSenderChain
 .output blockChain
-.output trustedVariables
-// .output trustedStateVariables
-// .output contextsOfStoredVariables
-// .output stateVariableTrustStatus
 .output untrustedVariables
 .output untrustedStateVariables
-.output allPossibleContexts
-.output store
+.output testInput

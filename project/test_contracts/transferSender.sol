@@ -5,6 +5,7 @@ contract Contract {
 
   function identity(address x) public returns(address) {
     address y = x;
+    require(msg.sender==msg.sender);
     return y;
   }
 
@@ -23,12 +24,12 @@ contract Contract {
   }
   function bar() public {
     address a = address(0xDEADBEEF);
-    if (msg.sender == msg.sender) {
-      a = address(0xDEADB00F);
-    }
+    //if (msg.sender == msg.sender) {
+      a = msg.sender;
+    //}
     (bool b, bool b2) = check(owner, a);
-    require(b);
-    require(b2);       
+    //require(b);
+    //require(b2);       
     selfdestruct(msg.sender);     
   }
 }

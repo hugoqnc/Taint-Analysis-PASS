@@ -20,7 +20,7 @@ def analyze(compile_output, contract_graph, contract_facts, *, output_dir):
         os.remove(output_dir / "previousInvalidGuards.csv")
         if verbose: print("Previous CSV deleted")
 
-    max_iter = 3
+    max_iter = 4
     counter = 0
     converged = False
     loop_condition = True

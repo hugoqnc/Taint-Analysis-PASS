@@ -244,13 +244,13 @@ untrustedVariables(id_derived, ctxt) :- // derivatives
     (
         untrustedVariables(ctxt,_), transferArgument(id_transfer, ctxt, index), jump(id_transfer,_,id_block_to,_), argument(id_derived, id_block_to, index);
         untrustedVariables(id_stmt_return,ctxt), untrustedVariables(ctxt,ctxt_previous), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt,_), argument(id_derived, id_block_next, index);
-        untrustedVariables(id_derived,"UCall"), blockStmt(id_block,id_derived), blockChain(id_block_start,id_block), jump(id_transfer_jump,_,id_block_start,_), transferArgument(id_transfer_jump,ctxt,_);
+        untrustedVariables(id_derived,"UCall"), blockStmt(id_block,id_derived), blockChain(id_block_start,id_block), jump(id_transfer_jump,_,id_block_start,_), transferArgument(id_transfer_jump,ctxt,_); // this is when a function calls another function that uses a msg.sender or derivative -> the taints is propagated to the particular context of the function call
         derivesFrom(id_derived,id_taint), untrustedVariables(id_taint, ctxt)
     ),
     blockStmt(id_block,id_derived), !potentialTrustedBlocks(id_block,_,ctxt).
 
 untrustedVariables(id_derived, ctxt) :- untrustedVariablesFromState(id_derived, ctxt). // derivatives from state variables 
-
+//TODO: solve case 5.sol: when a guard in branch uses a constant statement that implicitly depends on an untrusted variable 
 
 // Get invalid guards from this round
 potentialUntrustedVariablesForGuards(id_stmt, "UCall") :- // base case
@@ -262,7 +262,6 @@ potentialUntrustedVariablesForGuards(id_derived, ctxt) :- // derivatives
     (
         potentialUntrustedVariablesForGuards(ctxt,_), transferArgument(id_transfer, ctxt, index), jump(id_transfer,_,id_block_to,_), argument(id_derived, id_block_to, index);
         potentialUntrustedVariablesForGuards(id_stmt_return,ctxt), potentialUntrustedVariablesForGuards(ctxt,ctxt_previous), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt,_), argument(id_derived, id_block_next, index);
-        potentialUntrustedVariablesForGuards(id_derived,"UCall"), blockStmt(id_block,id_derived), blockChain(id_block_start,id_block), jump(id_transfer_jump,_,id_block_start,_), transferArgument(id_transfer_jump,ctxt,_);
         derivesFrom(id_derived,id_taint), potentialUntrustedVariablesForGuards(id_taint, ctxt)
     ).
 
@@ -283,17 +282,23 @@ invalidGuards(id_stmt,ctxt) :-
 //_________________________________________________________
 
 .output tainted_sinks
-//.output containsSender
-.output argument
-//.output blockChain
-.output untrustedVariables
-.output untrustedVariablesFromState
-.output untrustedStateVariables
-.output potentialUntrustedVariablesForGuards
-.output previousInvalidGuards
-.output potentialGuards
-.output potentialTrustedBlocks
-.output invalidGuards
+// .output containsSender
+// .output argument
+// //.output blockChain
+// .output untrustedVariables
+// .output untrustedVariablesFromState
+// .output untrustedStateVariables
+// .output potentialUntrustedVariablesForGuards
+// .output previousInvalidGuards
+// .output potentialGuards
+// .output potentialTrustedBlocks
+// .output invalidGuards
 
 // Export current untrusted variables, so they can be read in next round
 .output invalidGuards(IO=file, filename="../previousInvalidGuards.csv")
+
+//TODO: fix:
+    //5 (critical)
+    //recursiveRequireCall
+    //new_4
+    //new_7

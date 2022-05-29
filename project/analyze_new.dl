@@ -107,7 +107,7 @@
 .input selfdestruct
 .input revert
 .input builtinVariable
-.input previousUntrustedVariables(IO=file, filename="../facts_out/untrustedVariables.csv")
+.input previousUntrustedVariables(IO=file, filename="../previousUntrustedVariables.csv")
 
 // Ignore these...
 //.input arrayLoad
@@ -221,7 +221,7 @@ potentialTrustedBlocks(id_block,ctxt) :- goto(_,id_block,id_block_guarded), pote
 // Get untrusted state variables, and untrusted variables deriving from it
 untrustedStateVariables(field) :- store(_,field,id_stmt), untrustedVariables(id_stmt,_).
 
-untrustedVariablesFromState(id_derived, ctxt) :- // derivatives
+untrustedVariablesFromState(id_derived, ctxt) :- // base case
     (
         load(id_derived,field), untrustedStateVariables(field), ctxt="UCall";
         load(id_derived,field), untrustedStateVariables(field), blockStmt(id_block,id_derived), blockChain(id_block_start, id_block), jump(id_transfer_jump,_,id_block_start,_), transferArgument(id_transfer_jump,ctxt,_)
@@ -253,7 +253,7 @@ untrustedVariables(id_derived, ctxt) :- // derivatives
     ),
     blockStmt(id_block,id_derived), !potentialTrustedBlocks(id_block,ctxt).
 
-untrustedVariables(id_derived, ctxt) :- untrustedVariablesFromState(id_derived, ctxt).
+untrustedVariables(id_derived, ctxt) :- untrustedVariablesFromState(id_derived, ctxt). // derivatives from state variables 
 
 //_________________________________________________________
 // OUTPUT
@@ -269,3 +269,6 @@ untrustedVariables(id_derived, ctxt) :- untrustedVariablesFromState(id_derived, 
 .output previousUntrustedVariables
 .output potentialGuards
 .output potentialTrustedBlocks
+
+// Export current untrusted variables, so they can be read in next round
+.output untrustedVariables(IO=file, filename="../previousUntrustedVariables.csv")

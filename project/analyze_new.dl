@@ -282,23 +282,23 @@ invalidGuards(id_stmt,ctxt) :-
 //_________________________________________________________
 
 .output tainted_sinks
-// .output containsSender
-// .output argument
-// //.output blockChain
-// .output untrustedVariables
-// .output untrustedVariablesFromState
-// .output untrustedStateVariables
-// .output potentialUntrustedVariablesForGuards
-// .output previousInvalidGuards
-// .output potentialGuards
-// .output potentialTrustedBlocks
-// .output invalidGuards
+.output containsSender
+.output argument
+//.output blockChain
+.output untrustedVariables
+.output untrustedVariablesFromState
+.output untrustedStateVariables
+.output potentialUntrustedVariablesForGuards
+.output previousInvalidGuards
+.output potentialGuards
+.output potentialTrustedBlocks
+.output invalidGuards
 
 // Export current untrusted variables, so they can be read in next round
 .output invalidGuards(IO=file, filename="../previousInvalidGuards.csv")
 
 //TODO: fix:
-    //5 (critical)
-    //recursiveRequireCall
-    //new_4
-    //new_7
+    //5 (critical: separate variables untrusted because of function arguments and variables untrusted because of msg.sender)
+    //recursiveRequireCall (critical: context needs to be a list of arguments when having recursive function calls?)
+    //new_4 (same problem as for 5)
+    //new_7 (same problem as for 5)

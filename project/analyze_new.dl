@@ -255,8 +255,7 @@ untrustedVariables(id_derived, ctxt) :- untrustedVariablesFromState(id_derived, 
 // Get invalid guards from this round
 potentialUntrustedVariablesForGuards(id_stmt, "UCall") :- // base case
     (
-        builtinVariable(id_stmt,_), blockStmt(id_block,id_stmt);
-        argument(id_stmt,id_block,_), function(id_block,_)
+        argument(id_stmt,id_block,_), function(id_block,_) // no `builtinVariable` because we suppose msg.sender trusted to evaluate the guard, and we don't take other msg variables into account
     ).
 
 potentialUntrustedVariablesForGuards(id_derived, ctxt) :- // derivatives
@@ -266,6 +265,9 @@ potentialUntrustedVariablesForGuards(id_derived, ctxt) :- // derivatives
         potentialUntrustedVariablesForGuards(id_derived,"UCall"), blockStmt(id_block,id_derived), blockChain(id_block_start,id_block), jump(id_transfer_jump,_,id_block_start,_), transferArgument(id_transfer_jump,ctxt,_);
         derivesFrom(id_derived,id_taint), potentialUntrustedVariablesForGuards(id_taint, ctxt)
     ).
+
+potentialUntrustedVariablesForGuards(id_derived, ctxt) :- store(_,field,id_taint), potentialUntrustedVariablesForGuards(id_taint,ctxt), load(id_derived,field).
+//TODO: more fine-grained solution, work for each guard
 
 invalidGuards(id_stmt,ctxt) :- previousInvalidGuards(id_stmt,ctxt).
 invalidGuards(id_stmt,ctxt) :-

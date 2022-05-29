@@ -2,6 +2,7 @@ import argparse
 import json
 from pathlib import Path
 from time import sleep
+import os
 
 from peck.ir import visualizer
 from peck.solidity import compile_cfg
@@ -13,11 +14,16 @@ def analyze(compile_output, contract_graph, contract_facts, *, output_dir):
     # Optional: Use Datalog (Souffle).
 
     # Run the Datalog analyzer
+    verbose = True
+
+    if os.path.exists(output_dir / "previousInvalidGuards.csv"):
+        os.remove(output_dir / "previousInvalidGuards.csv")
+        if verbose: print("Previous CSV deleted")
+
     max_iter = 3
     counter = 0
     converged = False
     loop_condition = True
-    verbose = True
 
     while(loop_condition):
         counter += 1

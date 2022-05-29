@@ -1,6 +1,7 @@
 import argparse
 import json
 from pathlib import Path
+from time import sleep
 
 from peck.ir import visualizer
 from peck.solidity import compile_cfg
@@ -12,20 +13,36 @@ def analyze(compile_output, contract_graph, contract_facts, *, output_dir):
     # Optional: Use Datalog (Souffle).
 
     # Run the Datalog analyzer
-    datalog_analyzer = Path(__file__).parent / "analyze_new.dl"
-    output, facts_out = souffle.run_souffle(
-        datalog_analyzer,
-        facts=contract_facts,
-        fact_dir=output_dir / "facts_in",
-        output_dir=output_dir / "facts_out")
+    max_iter = 3
+    counter = 0
+    converged = False
+    loop_condition = True
+    verbose = True
+
+    while(loop_condition):
+        counter += 1
+        datalog_analyzer = Path(__file__).parent / "analyze_new.dl"
+        output, facts_out = souffle.run_souffle(
+            datalog_analyzer,
+            facts=contract_facts,
+            fact_dir=output_dir / "facts_in",
+            output_dir=output_dir / "facts_out")
+
+        if counter==max_iter:
+            loop_condition = False
+
+        #TODO: implement convergence -> stop loop if invalidGuards.csv does not change from an iteration to the next one
+
+        #sleep(2) #TODO: needed?
 
     # The output must be either 'Tainted' or 'Safe':
     print("Tainted" if facts_out['tainted_sinks'] else "Safe")
-    # print(output)
-    for key in facts_out:
-        max = 32
-        spacedKey = key + " "*(max-len(key)) + ":"
-        print(spacedKey, facts_out[key])
+
+    if verbose:
+        for key in facts_out:
+            max = 32
+            spacedKey = key + " "*(max-len(key)) + ":"
+            print(spacedKey, facts_out[key])
 
 
 def visualize(compile_output, contract_graph, contract_facts, *, output_dir):

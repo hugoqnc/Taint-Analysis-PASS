@@ -267,6 +267,7 @@ potentialUntrustedVariablesForGuards(id_derived, ctxt) :- // derivatives
         derivesFrom(id_derived,id_taint), potentialUntrustedVariablesForGuards(id_taint, ctxt)
     ).
 
+invalidGuards(id_stmt,ctxt) :- previousInvalidGuards(id_stmt,ctxt).
 invalidGuards(id_stmt,ctxt) :-
     potentialGuards(id_stmt,ctxt),
     (

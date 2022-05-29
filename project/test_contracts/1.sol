@@ -9,7 +9,7 @@ contract Contract {
   }
 
   function changeOwner(address payable newOwner) public {
-    require(msg.sender == newOwner);
+    require(msg.sender == user);
     owner = newOwner;
   }
 

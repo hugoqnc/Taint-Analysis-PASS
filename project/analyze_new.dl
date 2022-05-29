@@ -143,7 +143,7 @@ msgSender(id) :- builtinVariable(id, "SENDER").
 .decl potentialUntrustedVariablesForGuard(id_stmt_guard: SSA, ctxt: SSA, id_stmt_var: SSA)
 .decl untrustedVariables(id_stmt: SSA, ctxt: SSA)
 .decl untrustedStateVariables(field: Name)
-
+.decl untrustedVariablesFromState(id_stmt: SSA, ctxt: SSA)
 
 //_________________________________________________________
 // LOGIC IMPLEMENTATION
@@ -218,6 +218,24 @@ potentialTrustedBlocks(id_block,ctxt) :- branch(_,_,id_block,id_block_true,id_bl
 potentialTrustedBlocks(id_block,ctxt) :- goto(_,id_block,id_block_guarded), potentialTrustedBlocks(id_block_guarded,ctxt). 
 
 
+// Get untrusted state variables, and untrusted variables deriving from it
+untrustedStateVariables(field) :- store(_,field,id_stmt), untrustedVariables(id_stmt,_).
+
+untrustedVariablesFromState(id_derived, ctxt) :- // derivatives
+    (
+        load(id_derived,field), untrustedStateVariables(field), ctxt="UCall";
+        load(id_derived,field), untrustedStateVariables(field), blockStmt(id_block,id_derived), blockChain(id_block_start, id_block), jump(id_transfer_jump,_,id_block_start,_), transferArgument(id_transfer_jump,ctxt,_)
+    ).
+
+untrustedVariablesFromState(id_derived, ctxt) :- // derivatives
+    (
+        untrustedVariablesFromState(ctxt,_), transferArgument(id_transfer, ctxt, index), jump(id_transfer,_,id_block_to,_), argument(id_derived, id_block_to, index);
+        untrustedVariablesFromState(id_stmt_return,ctxt), untrustedVariablesFromState(ctxt,ctxt_previous), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt,_), argument(id_derived, id_block_next, index);
+        untrustedVariablesFromState(id_derived,"UCall"), blockStmt(id_block,id_derived), blockChain(id_block_start,id_block), jump(id_transfer_jump,_,id_block_start,_), transferArgument(id_transfer_jump,ctxt,_);
+        derivesFrom(id_derived,id_taint), untrustedVariablesFromState(id_taint, ctxt)
+    ).
+
+
 // Get untrusted variables
 untrustedVariables(id_stmt, "UCall") :- // base case
     (
@@ -235,8 +253,7 @@ untrustedVariables(id_derived, ctxt) :- // derivatives
     ),
     blockStmt(id_block,id_derived), !potentialTrustedBlocks(id_block,ctxt).
 
-//TODO: add untrusted variables coming from untrusted state variables
-
+untrustedVariables(id_derived, ctxt) :- untrustedVariablesFromState(id_derived, ctxt).
 
 //_________________________________________________________
 // OUTPUT
@@ -247,7 +264,8 @@ untrustedVariables(id_derived, ctxt) :- // derivatives
 .output argument
 //.output blockChain
 .output untrustedVariables
-//.output untrustedStateVariables
+.output untrustedVariablesFromState
+.output untrustedStateVariables
 .output previousUntrustedVariables
 .output potentialGuards
 .output potentialTrustedBlocks

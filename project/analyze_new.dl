@@ -82,7 +82,7 @@
 .decl revert(id_transfer: Transfer, id_block: Block)
 .decl builtinVariable(id: SSA, name: symbol)
 
-.decl previousUntrustedVariables(id_stmt: SSA, ctxt: SSA)
+.decl previousInvalidGuards(id_stmt: SSA, ctxt: SSA)
 
 #ifdef ENABLE_INPUT_FROM_FILES
 .input function
@@ -107,7 +107,7 @@
 .input selfdestruct
 .input revert
 .input builtinVariable
-.input previousUntrustedVariables(IO=file, filename="../previousUntrustedVariables.csv")
+.input previousInvalidGuards(IO=file, filename="../previousInvalidGuards.csv")
 
 // Ignore these...
 //.input arrayLoad
@@ -140,7 +140,7 @@ msgSender(id) :- builtinVariable(id, "SENDER").
 .decl potentialTrustedBlocks(id_block: Block, ctxt: SSA)
 .decl untrustedBlocks(id_block: Block, ctxt: SSA)
 
-.decl potentialUntrustedVariablesForGuard(id_stmt_guard: SSA, ctxt: SSA, id_stmt_var: SSA)
+.decl potentialUntrustedVariablesForGuards(id_stmt: SSA, ctxt: SSA)
 .decl untrustedVariables(id_stmt: SSA, ctxt: SSA)
 .decl untrustedStateVariables(field: Name)
 .decl untrustedVariablesFromState(id_stmt: SSA, ctxt: SSA)
@@ -149,7 +149,7 @@ msgSender(id) :- builtinVariable(id, "SENDER").
 // LOGIC IMPLEMENTATION
 //_________________________________________________________
 
-//tainted_sinks(id) :- selfdestruct(id,id_taint).
+tainted_sinks(id) :- selfdestruct(id,_), untrustedVariables(id,_).
 
 
 // Get variables that derives from msg.sender in all contexts
@@ -176,10 +176,6 @@ containsSender(id_derived, ctxt) :- containsSender(id_derived,"UCall"), blockStm
 containsSender(id_derived, ctxt) :- derivesFrom(id_derived,id_taint), containsSender(id_taint, ctxt).
 
 
-// Get invalid guards from previous untrusted variables
-// TODO...
-
-
 // Get potential guards
 potentialGuards(id_stmt, ctxt) :- 
     (
@@ -187,7 +183,7 @@ potentialGuards(id_stmt, ctxt) :-
         containsSender(id_stmt, ctxt), transferArgument(id_transfer,id_stmt,_), return(id_transfer,id_block), jump(_,_,id_block,id_block_next), branch(_,_,id_block_next,_,_,id_condition), argument(id_condition,id_block_next,_);
         containsSender(id_stmt, ctxt), transferArgument(id_transfer,id_stmt,_), return(id_transfer,_), jump(_,_,_,id_block_next), branch(_,_,id_block_next,_,_,id_condition), argument(id_condition,id_block_next,_)
     ),
-    !invalidGuards(id_stmt, ctxt).
+    !previousInvalidGuards(id_stmt, ctxt).
 
 
 // Get trusted blocks
@@ -255,6 +251,30 @@ untrustedVariables(id_derived, ctxt) :- // derivatives
 
 untrustedVariables(id_derived, ctxt) :- untrustedVariablesFromState(id_derived, ctxt). // derivatives from state variables 
 
+
+// Get invalid guards from this round
+potentialUntrustedVariablesForGuards(id_stmt, "UCall") :- // base case
+    (
+        builtinVariable(id_stmt,_), blockStmt(id_block,id_stmt);
+        argument(id_stmt,id_block,_), function(id_block,_)
+    ).
+
+potentialUntrustedVariablesForGuards(id_derived, ctxt) :- // derivatives
+    (
+        potentialUntrustedVariablesForGuards(ctxt,_), transferArgument(id_transfer, ctxt, index), jump(id_transfer,_,id_block_to,_), argument(id_derived, id_block_to, index);
+        potentialUntrustedVariablesForGuards(id_stmt_return,ctxt), potentialUntrustedVariablesForGuards(ctxt,ctxt_previous), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt,_), argument(id_derived, id_block_next, index);
+        potentialUntrustedVariablesForGuards(id_derived,"UCall"), blockStmt(id_block,id_derived), blockChain(id_block_start,id_block), jump(id_transfer_jump,_,id_block_start,_), transferArgument(id_transfer_jump,ctxt,_);
+        derivesFrom(id_derived,id_taint), potentialUntrustedVariablesForGuards(id_taint, ctxt)
+    ).
+
+invalidGuards(id_stmt,ctxt) :-
+    potentialGuards(id_stmt,ctxt),
+    (
+        untrustedVariables(id_stmt,ctxt);
+        potentialUntrustedVariablesForGuards(id_stmt,ctxt)
+    ).
+
+
 //_________________________________________________________
 // OUTPUT
 //_________________________________________________________
@@ -266,9 +286,11 @@ untrustedVariables(id_derived, ctxt) :- untrustedVariablesFromState(id_derived, 
 .output untrustedVariables
 .output untrustedVariablesFromState
 .output untrustedStateVariables
-.output previousUntrustedVariables
+.output potentialUntrustedVariablesForGuards
+.output previousInvalidGuards
 .output potentialGuards
 .output potentialTrustedBlocks
+.output invalidGuards
 
 // Export current untrusted variables, so they can be read in next round
-.output untrustedVariables(IO=file, filename="../previousUntrustedVariables.csv")
+.output invalidGuards(IO=file, filename="../previousInvalidGuards.csv")

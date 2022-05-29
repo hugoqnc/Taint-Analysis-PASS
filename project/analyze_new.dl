@@ -218,15 +218,35 @@ potentialTrustedBlocks(id_block,ctxt) :- branch(_,_,id_block,id_block_true,id_bl
 potentialTrustedBlocks(id_block,ctxt) :- goto(_,id_block,id_block_guarded), potentialTrustedBlocks(id_block_guarded,ctxt). 
 
 
+// Get untrusted variables
+untrustedVariables(id_stmt, "UCall") :- // base case
+    (
+        builtinVariable(id_stmt,_), blockStmt(id_block,id_stmt);
+        argument(id_stmt,id_block,_), function(id_block,_)
+    ),
+    !potentialTrustedBlocks(id_block,"UCall").
+
+untrustedVariables(id_derived, ctxt) :- // derivatives
+    (
+        untrustedVariables(ctxt,_), transferArgument(id_transfer, ctxt, index), jump(id_transfer,_,id_block_to,_), argument(id_derived, id_block_to, index);
+        untrustedVariables(id_stmt_return,ctxt), untrustedVariables(ctxt,ctxt_previous), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt,_), argument(id_derived, id_block_next, index);
+        untrustedVariables(id_derived,"UCall"), blockStmt(id_block,id_derived), blockChain(id_block_start,id_block), jump(id_transfer_jump,_,id_block_start,_), transferArgument(id_transfer_jump,ctxt,_);
+        derivesFrom(id_derived,id_taint), untrustedVariables(id_taint, ctxt)
+    ),
+    blockStmt(id_block,id_derived), !potentialTrustedBlocks(id_block,ctxt).
+
+//TODO: add untrusted variables coming from untrusted state variables
+
+
 //_________________________________________________________
 // OUTPUT
 //_________________________________________________________
 
 .output tainted_sinks
-.output containsSender
+//.output containsSender
 .output argument
-.output blockChain
-//.output untrustedVariables
+//.output blockChain
+.output untrustedVariables
 //.output untrustedStateVariables
 .output previousUntrustedVariables
 .output potentialGuards

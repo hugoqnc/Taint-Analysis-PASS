@@ -137,7 +137,7 @@ msgSender(id) :- builtinVariable(id, "SENDER").
 .decl potentialGuards(id_stmt: SSA, ctxt: SSA)
 .decl invalidGuards(id_stmt: SSA, ctxt: SSA)
 
-.decl potentialTrustedBlocks(id_block: Block, ctxt: SSA)
+.decl potentialTrustedBlocks(id_block: Block, id_guard: SSA, ctxt: SSA)
 .decl untrustedBlocks(id_block: Block, ctxt: SSA)
 
 .decl potentialUntrustedVariablesForGuards(id_stmt: SSA, ctxt: SSA)
@@ -187,8 +187,8 @@ potentialGuards(id_stmt, ctxt) :-
 
 
 // Get trusted blocks
-potentialTrustedBlocks(id_block, ctxt) :- potentialGuards(id_stmt, ctxt), blockStmt(id_block, id_stmt).
-potentialTrustedBlocks(id_block, ctxt) :-
+potentialTrustedBlocks(id_block, id_guard, ctxt) :- potentialGuards(id_guard, ctxt), blockStmt(id_block, id_guard).
+potentialTrustedBlocks(id_block, id_guard, ctxt) :-
     branch(_,_,_,id_block_guarded_true,id_block_guarded_false,_),
     blockChain(id_block_start, id_block_guarded_true),
     blockChain(id_block_start, id_block_guarded_true_next),
@@ -196,22 +196,22 @@ potentialTrustedBlocks(id_block, ctxt) :-
     blockChain(id_block_start, id_block_guarded_false_next),
     id_block_guarded_true_next != id_block_guarded_false_next, // necessary so that we actually cover the two branches
     goto(_,id_block_guarded_true_next,id_block),
-    potentialTrustedBlocks(id_block_guarded_true_next, ctxt),
+    potentialTrustedBlocks(id_block_guarded_true_next, id_guard, ctxt),
     goto(_,id_block_guarded_false_next,id_block),
-    potentialTrustedBlocks(id_block_guarded_false_next, ctxt).
-potentialTrustedBlocks(id_block, ctxt) :- branch(_,_,id_block_guarded,id_block,_,_), potentialTrustedBlocks(id_block_guarded, ctxt).
-potentialTrustedBlocks(id_block, ctxt) :- branch(_,_,id_block_guarded,_,id_block,_), potentialTrustedBlocks(id_block_guarded, ctxt).
-potentialTrustedBlocks(id_block, ctxt) :- jump(id_transfer_jump,id_block_guarded,id_block,_), potentialTrustedBlocks(id_block_guarded,_), transferArgument(id_transfer_jump,ctxt,_), function(id_block,_).
-potentialTrustedBlocks(id_block, ctxt) :- jump(_,id_block_guarded,_,id_block), potentialTrustedBlocks(id_block_guarded, ctxt). // the block to which the jump returns is in the same blockchain as the block that initiated the jump, so it has the same context 
+    potentialTrustedBlocks(id_block_guarded_false_next, id_guard, ctxt).
+potentialTrustedBlocks(id_block, id_guard, ctxt) :- branch(_,_,id_block_guarded,id_block,_,_), potentialTrustedBlocks(id_block_guarded, id_guard, ctxt).
+potentialTrustedBlocks(id_block, id_guard, ctxt) :- branch(_,_,id_block_guarded,_,id_block,_), potentialTrustedBlocks(id_block_guarded, id_guard, ctxt).
+potentialTrustedBlocks(id_block, id_guard, ctxt) :- jump(id_transfer_jump,id_block_guarded,id_block,_), potentialTrustedBlocks(id_block_guarded,id_guard,_), transferArgument(id_transfer_jump,ctxt,_), function(id_block,_).
+potentialTrustedBlocks(id_block, id_guard, ctxt) :- jump(_,id_block_guarded,_,id_block), potentialTrustedBlocks(id_block_guarded, id_guard,ctxt). // the block to which the jump returns is in the same blockchain as the block that initiated the jump, so it has the same context 
 
 // If a block called by another function has a guard (with a jump), then the block to which it returns is also guarded, under all possible contexts (in particular, under the context `UCall`)
-potentialTrustedBlocks(id_block, ctxt_previous) :- jump(id_transfer_jump,id_block_jump,id_block_guarded,id_block), potentialTrustedBlocks(id_block_guarded,ctxt), transferArgument(id_transfer_jump,ctxt,_), blockChain(id_block_start,id_block_jump), jump(id_transfer_jump_previous,_,id_block_start,_), transferArgument(id_transfer_jump_previous,ctxt_previous,_).
-potentialTrustedBlocks(id_block, "UCall") :- jump(id_transfer_jump,_,id_block_guarded,id_block), potentialTrustedBlocks(id_block_guarded,ctxt), transferArgument(id_transfer_jump,ctxt,_).
+potentialTrustedBlocks(id_block, id_guard, ctxt_previous) :- jump(id_transfer_jump,id_block_jump,id_block_guarded,id_block), potentialTrustedBlocks(id_block_guarded,id_guard,ctxt), transferArgument(id_transfer_jump,ctxt,_), blockChain(id_block_start,id_block_jump), jump(id_transfer_jump_previous,_,id_block_start,_), transferArgument(id_transfer_jump_previous,ctxt_previous,_).
+potentialTrustedBlocks(id_block, id_guard, "UCall") :- jump(id_transfer_jump,_,id_block_guarded,id_block), potentialTrustedBlocks(id_block_guarded,id_guard,ctxt), transferArgument(id_transfer_jump,ctxt,_).
 
 // If a block is guarded, then the blocks before it in the same function should also be guarded, provided that all branches are guarded (there is no unguarded path)
-potentialTrustedBlocks(id_block,ctxt) :- jump(_,id_block,_,id_block_guarded), potentialTrustedBlocks(id_block_guarded,ctxt). 
-potentialTrustedBlocks(id_block,ctxt) :- branch(_,_,id_block,id_block_true,id_block_false,_), potentialTrustedBlocks(id_block_true,ctxt), potentialTrustedBlocks(id_block_false,ctxt). // both branches should be guarded
-potentialTrustedBlocks(id_block,ctxt) :- goto(_,id_block,id_block_guarded), potentialTrustedBlocks(id_block_guarded,ctxt). 
+potentialTrustedBlocks(id_block,id_guard,ctxt) :- jump(_,id_block,_,id_block_guarded), potentialTrustedBlocks(id_block_guarded,id_guard,ctxt). 
+potentialTrustedBlocks(id_block,id_guard,ctxt) :- branch(_,_,id_block,id_block_true,id_block_false,_), potentialTrustedBlocks(id_block_true,id_guard,ctxt), potentialTrustedBlocks(id_block_false,id_guard,ctxt). // both branches should be guarded
+potentialTrustedBlocks(id_block,id_guard,ctxt) :- goto(_,id_block,id_block_guarded), potentialTrustedBlocks(id_block_guarded,id_guard,ctxt). 
 
 
 // Get untrusted state variables, and untrusted variables deriving from it
@@ -238,7 +238,7 @@ untrustedVariables(id_stmt, "UCall") :- // base case
         builtinVariable(id_stmt,_), blockStmt(id_block,id_stmt);
         argument(id_stmt,id_block,_), function(id_block,_)
     ),
-    !potentialTrustedBlocks(id_block,"UCall").
+    !potentialTrustedBlocks(id_block,_,"UCall").
 
 untrustedVariables(id_derived, ctxt) :- // derivatives
     (
@@ -247,7 +247,7 @@ untrustedVariables(id_derived, ctxt) :- // derivatives
         untrustedVariables(id_derived,"UCall"), blockStmt(id_block,id_derived), blockChain(id_block_start,id_block), jump(id_transfer_jump,_,id_block_start,_), transferArgument(id_transfer_jump,ctxt,_);
         derivesFrom(id_derived,id_taint), untrustedVariables(id_taint, ctxt)
     ),
-    blockStmt(id_block,id_derived), !potentialTrustedBlocks(id_block,ctxt).
+    blockStmt(id_block,id_derived), !potentialTrustedBlocks(id_block,_,ctxt).
 
 untrustedVariables(id_derived, ctxt) :- untrustedVariablesFromState(id_derived, ctxt). // derivatives from state variables 
 
@@ -266,8 +266,8 @@ potentialUntrustedVariablesForGuards(id_derived, ctxt) :- // derivatives
         derivesFrom(id_derived,id_taint), potentialUntrustedVariablesForGuards(id_taint, ctxt)
     ).
 
-potentialUntrustedVariablesForGuards(id_derived, ctxt) :- store(_,field,id_taint), potentialUntrustedVariablesForGuards(id_taint,ctxt), load(id_derived,field).
-//TODO: more fine-grained solution, work for each guard
+potentialUntrustedVariablesForGuards(id_derived, ctxt) :- store(id_stmt_store,field,id_taint), potentialUntrustedVariablesForGuards(id_taint,ctxt), load(id_derived,field), blockStmt(id_block_store,id_stmt_store), blockStmt(id_block_load,id_derived), potentialTrustedBlocks(id_block_store,id_guard,ctxt), potentialTrustedBlocks(id_block_load,id_guard,ctxt).
+//TODO: not sure that it is a perfect solution, try to test `stateAndGuard.sol` with more difficult cases
 
 invalidGuards(id_stmt,ctxt) :- previousInvalidGuards(id_stmt,ctxt).
 invalidGuards(id_stmt,ctxt) :-

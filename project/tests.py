@@ -6,12 +6,13 @@ from peck.ir import visualizer
 from peck.solidity import compile_cfg
 from peck.staticanalysis import factencoder, souffle, visualization as fact_visualizer
 
-def get_tainted_sinks(contract_facts):
+from analyze import run
+
+def get_tainted_sinks(contract_facts, output_dir):
     # Run the Datalog analyzer
+    verbose = True
     datalog_analyzer = Path(__file__).parent / "analyze.dl"
-    output, facts_out = souffle.run_souffle(
-        datalog_analyzer,
-        facts=contract_facts)
+    facts_out = run(contract_facts, output_dir, verbose)
 
     # The output must be either 'Tainted' or 'Safe':
     tainted_sinks = set()
@@ -24,7 +25,7 @@ def get_tainted_sinks(contract_facts):
     return tainted_sinks
 
 
-def print_summary(summary):
+def print_summary(summary, points):
     if summary:
         print("-------------------------------")
         for contract in summary:
@@ -32,6 +33,7 @@ def print_summary(summary):
             print("-------------------------------")
     else:
         print("No errors found!")
+    print(f"Scored {scored_points} points on the preliminary tests.")
 
 
 def get_encoded_contract(contract_path):
@@ -48,19 +50,22 @@ def run_custom_tests(file_path):
     with open(file_path) as ground_truth_file:
         for line in ground_truth_file:
             contract_name, tainted_sinks = line.split(";")
-            contract_name += ".sol"
+            contract_name_sol = contract_name + ".sol"
             tainted_sinks_ground_truth = []
             for sink in tainted_sinks.split(","):
                 tainted_sinks_ground_truth.append(sink.strip())
             tainted_sinks_ground_truth = set(tainted_sinks_ground_truth)
 
-            contract_path = os.path.join('test_contracts', contract_name)
+            contract_path = os.path.join('test_contracts', contract_name_sol)
+
+            #output_dir = contract_path.parent / (Path(args.source.name).stem + "_out")
+            output_dir = Path(os.path.join('test_contracts', contract_name + "_out"))
 
             compile_output, contract_graph, contract_facts = get_encoded_contract(contract_path)
-            tainted_sinks_predicted = get_tainted_sinks(contract_facts)
+            tainted_sinks_predicted = get_tainted_sinks(contract_facts, output_dir)
             
             if tainted_sinks_predicted != tainted_sinks_ground_truth:
-                summary.append(f"Contract {contract_name} has errors. \n Expected: {tainted_sinks_ground_truth}, got: {tainted_sinks_predicted}")
+                summary.append(f"Contract {contract_name_sol} has errors. \n Expected: {tainted_sinks_ground_truth}, got: {tainted_sinks_predicted}")
     return summary
 
 
@@ -75,19 +80,27 @@ def read_ground_truth(folder):
 
 
 def run_preliminary_tests():
+    scored_points = 0
     print("running preliminary tests...")
     folder = "preliminary_test_contracts"
     ground_truths = read_ground_truth(folder)
     summary = []
     for file, ground_truth in ground_truths.items():
+        contract_name, file_ending = file.split(".")
+        output_dir = Path(os.path.join('test_contracts', contract_name + "_out"))
         ground_truth = ground_truth.strip()
         contract_path = os.path.join(folder, file)
         compile_output, contract_graph, contract_facts = get_encoded_contract(contract_path)
-        tainted_sinks_predicted = get_tainted_sinks(contract_facts)
+        tainted_sinks_predicted = get_tainted_sinks(contract_facts, output_dir)
         result = "Safe" if tainted_sinks_predicted == {''} else "Tainted"
         if result != ground_truth:
+            if ground_truth == "Tainted" and result == "Safe":
+                scored_points -= 2
             summary.append(f"Contract {file} has errors. Expected: {ground_truth}, got: {result}")
-    return summary
+        else:
+            if result == "Safe":
+                scored_points += 1
+    return summary, scored_points
 
 
 if __name__ == '__main__':
@@ -99,6 +112,6 @@ if __name__ == '__main__':
     # print(ground_truth_file_path)
 
     summary_custom_tests = run_custom_tests(ground_truth_file_path)
-    summary_preliminary = run_preliminary_tests()
+    summary_preliminary, scored_points = run_preliminary_tests()
 
-    print_summary(summary_custom_tests + summary_preliminary)
+    print_summary(summary_custom_tests + summary_preliminary, scored_points)

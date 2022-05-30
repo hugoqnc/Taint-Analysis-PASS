@@ -12,10 +12,20 @@ def analyze(compile_output, contract_graph, contract_facts, *, output_dir):
     # TODO: Implement your analysis here.
 
     # Optional: Use Datalog (Souffle).
-
-    # Run the Datalog analyzer
     verbose = True
+    # Run the Datalog analyzer
+    facts_out = run(contract_facts, output_dir, verbose)
+    # The output must be either 'Tainted' or 'Safe':
+    print("Tainted" if facts_out['tainted_sinks'] else "Safe")
 
+    if verbose:
+        for key in facts_out:
+            max = 32
+            spacedKey = key + " "*(max-len(key)) + ":"
+            print(spacedKey, facts_out[key])
+
+
+def run(contract_facts, output_dir, verbose):
     if os.path.exists(output_dir / "previousInvalidGuards.csv"):
         os.remove(output_dir / "previousInvalidGuards.csv")
         if verbose: print("Previous CSV deleted")
@@ -40,15 +50,7 @@ def analyze(compile_output, contract_graph, contract_facts, *, output_dir):
         #TODO: implement convergence -> stop loop if invalidGuards.csv does not change from an iteration to the next one
 
         #sleep(2) #TODO: needed?
-
-    # The output must be either 'Tainted' or 'Safe':
-    print("Tainted" if facts_out['tainted_sinks'] else "Safe")
-
-    if verbose:
-        for key in facts_out:
-            max = 32
-            spacedKey = key + " "*(max-len(key)) + ":"
-            print(spacedKey, facts_out[key])
+    return facts_out
 
 
 def visualize(compile_output, contract_graph, contract_facts, *, output_dir):

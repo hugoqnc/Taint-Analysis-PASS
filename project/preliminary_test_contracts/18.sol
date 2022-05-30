@@ -26,7 +26,7 @@ contract Contract {
     if (safe_int > 5) {
       return msg.sender == safe_addr;
     } else {
-      return msg.sender == safe_addr && safe_int > 0;
+      return msg.sender == safe_addr || safe_int > 0;
     }
   }
 

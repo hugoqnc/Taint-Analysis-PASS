@@ -242,7 +242,13 @@ potentialTrustedBlocks(id_block, id_guard, "UCall") :-
     ).
 
 // If a block is guarded, then the blocks before it in the same function should also be guarded, provided that all branches are guarded (there is no unguarded path)
-potentialTrustedBlocks(id_block,id_guard,ctxt) :- jump(_,id_block,_,id_block_guarded), potentialTrustedBlocks(id_block_guarded,id_guard,ctxt). 
+potentialTrustedBlocks(id_block,id_guard,ctxt) :-
+    jump(id_transfer_jump,id_block,_,id_block_guarded), potentialTrustedBlocks(id_block_guarded,id_guard,ctxt),
+    (
+        transferArgument(id_transfer_jump,ctxt,_);
+        !transferArgument(id_transfer_jump,_,_)
+    ).
+    //TODO: not sure of the part with transferArgument in this case 
 potentialTrustedBlocks(id_block,id_guard,ctxt) :- branch(_,_,id_block,id_block_true,id_block_false,_), potentialTrustedBlocks(id_block_true,id_guard,ctxt), potentialTrustedBlocks(id_block_false,id_guard,ctxt). // both branches should be guarded
 potentialTrustedBlocks(id_block,cat(id_guard_true, cat(" ", id_guard_false)),ctxt) :- branch(_,_,id_block,id_block_true,id_block_false,_), potentialTrustedBlocks(id_block_true,id_guard_true,ctxt), potentialTrustedBlocks(id_block_false,id_guard_false,ctxt), id_guard_true!=id_guard_false, strlen(id_guard_true)=3, strlen(id_guard_false)=3. // each branch is guarded with a different guard (but under the same context). Then the upper block is guarded with a combination of the 2 guards (see 18.sol)
 //TODO: using strlen=3 is probably not recursive enough
@@ -262,7 +268,8 @@ untrustedVariablesFromState(id_derived, ctxt) :- // base case
 untrustedVariablesFromState(id_derived, ctxt) :- // derivatives
     (
         untrustedVariablesFromState(ctxt,_), transferArgument(id_transfer, ctxt, index), jump(id_transfer,_,id_block_to,_), argument(id_derived, id_block_to, index);
-        untrustedVariablesFromState(id_stmt_return,ctxt), untrustedVariablesFromState(ctxt,ctxt_previous), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt,_), argument(id_derived, id_block_next, index);
+        // untrustedVariablesFromState(id_stmt_return,ctxt), untrustedVariablesFromState(ctxt,ctxt_previous), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt,_), argument(id_derived, id_block_next, index);
+        untrustedVariablesFromState(id_stmt_return,ctxt_previous), untrustedVariablesFromState(ctxt_previous,ctxt), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt_previous,_), argument(id_derived, id_block_next, index);
         untrustedVariablesFromState(id_derived,"UCall"), blockStmt(id_block,id_derived), blockChain(id_block_start,id_block), jump(id_transfer_jump,_,id_block_start,_), transferArgument(id_transfer_jump,ctxt,_);
         derivesFrom(id_derived,id_taint), untrustedVariablesFromState(id_taint, ctxt)
     ).
@@ -279,7 +286,7 @@ untrustedVariables(id_stmt, "UCall") :- // base case
 untrustedVariables(id_derived, ctxt) :- // derivatives
     (
         untrustedVariables(ctxt,_), transferArgument(id_transfer, ctxt, index), jump(id_transfer,_,id_block_to,_), argument(id_derived, id_block_to, index);
-        untrustedVariables(id_stmt_return,ctxt), untrustedVariables(ctxt,ctxt_previous), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt,_), argument(id_derived, id_block_next, index);
+        untrustedVariables(id_stmt_return,ctxt_previous), untrustedVariables(ctxt_previous,ctxt), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt_previous,_), argument(id_derived, id_block_next, index);
         untrustedVariables(id_derived,"UCall"), blockStmt(id_block,id_derived), blockChain(id_block_start,id_block), jump(id_transfer_jump,_,id_block_start,_), transferArgument(id_transfer_jump,ctxt,_); // this is when a function calls another function that uses a msg.sender or derivative -> the taints is propagated to the particular context of the function call
         derivesFrom(id_derived,id_taint), untrustedVariables(id_taint, ctxt)
     ),
@@ -296,7 +303,7 @@ potentialUntrustedVariablesForGuards(id_stmt, "UCall") :- // base case
 potentialUntrustedVariablesForGuards(id_derived, ctxt) :- // derivatives
     (
         potentialUntrustedVariablesForGuards(ctxt,_), transferArgument(id_transfer, ctxt, index), jump(id_transfer,_,id_block_to,_), argument(id_derived, id_block_to, index);
-        potentialUntrustedVariablesForGuards(id_stmt_return,ctxt), potentialUntrustedVariablesForGuards(ctxt,ctxt_previous), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt,_), argument(id_derived, id_block_next, index);
+        potentialUntrustedVariablesForGuards(id_stmt_return,ctxt_previous), potentialUntrustedVariablesForGuards(ctxt_previous,ctxt), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt_previous,_), argument(id_derived, id_block_next, index);
         derivesFrom(id_derived,id_taint), potentialUntrustedVariablesForGuards(id_taint, ctxt)
     ).
 
@@ -309,6 +316,7 @@ invalidGuards(id_stmt,ctxt) :-
     (
         untrustedVariables(id_stmt,ctxt);
         potentialUntrustedVariablesForGuards(id_stmt,ctxt)
+        //untrustedVariablesFromState(id_derived, ctxt)
     ).
 
 
@@ -321,7 +329,8 @@ invalidGuards(id_stmt,ctxt) :-
 .output argument
 .output transferArgument
 .output jump
-//.output blockChain
+.output return
+.output blockChain
 .output untrustedVariables
 .output untrustedVariablesFromState
 .output untrustedStateVariables

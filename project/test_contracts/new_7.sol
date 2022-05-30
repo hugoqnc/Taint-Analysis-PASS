@@ -1,17 +1,14 @@
 pragma solidity ^0.5.0;
 
 contract Contract {
-  address c;
+  address owner;
 
-  function order2(address addr) public {
-    address payable b1 = msg.sender;
+  function func(address payable addr) public {
     address dependOnSender = addr;
-    if(b1==addr) {
-      dependOnSender = addr; // depends on msg.sender
-      require(dependOnSender==c); // guard
-      selfdestruct(b1); // safe
+    if(msg.sender==addr) {            // not a guard
+      dependOnSender = addr;          // depends on msg.sender
+      require(dependOnSender==owner); // guard?
+      selfdestruct(addr);             // safe?
     }
-    require(dependOnSender==c); // not a guard
-    selfdestruct(b1); // vulnerable
   }
 }

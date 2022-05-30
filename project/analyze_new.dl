@@ -333,7 +333,5 @@ invalidGuards(id_stmt,ctxt) :-
 .output invalidGuards(IO=file, filename="../previousInvalidGuards.csv")
 
 //TODO: fix:
-    //5 (critical: separate variables untrusted because of function arguments and variables untrusted because of msg.sender)
-    //recursiveRequireCall (critical: context needs to be a list of arguments when having recursive function calls? Maybe there is no need to fix, as it will be "Tainted" as long as one context is tainted, even if the tainted sinks won't be exactly right)
-    //new_4 (same problem as for 5)
-    //new_7 (same problem as for 5)
+    //recursiveRequireCall (critical: context needs to be a list of arguments when having recursive function calls?)
+    //new_7 (see according to TA's answer)

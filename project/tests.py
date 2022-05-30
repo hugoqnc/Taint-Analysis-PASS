@@ -98,7 +98,8 @@ def run_preliminary_tests():
                 scored_points -= 2
             summary.append(f"Contract {file} has errors. Expected: {ground_truth}, got: {result}")
         else:
-            scored_points += 1
+            if result == "Safe":
+                scored_points += 1
     return summary, scored_points
 
 

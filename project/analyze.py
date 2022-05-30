@@ -27,7 +27,7 @@ def analyze(compile_output, contract_graph, contract_facts, *, output_dir):
 
     while(loop_condition):
         counter += 1
-        datalog_analyzer = Path(__file__).parent / "analyze_new.dl"
+        datalog_analyzer = Path(__file__).parent / "analyze.dl"
         output, facts_out = souffle.run_souffle(
             datalog_analyzer,
             facts=contract_facts,

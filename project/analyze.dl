@@ -195,8 +195,14 @@ blockChain(id_block_start, id_block_next) :- blockChain(id_block_start, id_block
 
 containsSender(id_stmt, "UCall") :- builtinVariable(id_stmt,"SENDER"). // "UCall" means that the statement contains sender when its function is called by the user.
 containsSender(id_derived, ctxt) :- containsSender(ctxt,_), transferArgument(id_transfer, ctxt, index), jump(id_transfer,_,id_block_to,_), argument(id_derived, id_block_to, index). // function call when the argument depends on msg.sender
-containsSender(id_derived, ctxt_previous) :- containsSender(id_stmt_return,ctxt), containsSender(ctxt,ctxt_previous), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt,_), argument(id_derived, id_block_next, index). // return after a function call: if the result value depends on msg.sender, then the block to which we return to knows it. `blockChain`is necessary as shown on example `transferSender.sol`
-containsSender(id_derived, ctxt) :- containsSender(id_derived,"UCall"), blockStmt(id_block,id_derived), blockChain(id_block_start,id_block), jump(id_transfer_jump,_,id_block_start,_), transferArgument(id_transfer_jump,ctxt,_). // if a statement contains sender when the function is called by the user, then the same statement necessarily contains sender when the function is called by another function
+
+// if a statement contains sender when the function is called by the user, then the same statement necessarily contains sender when the function is called by another function
+containsSender(id_derived, ctxt) :- containsSender(id_derived,"UCall"), blockStmt(id_block,id_derived), blockChain(id_block_start,id_block), jump(id_transfer_jump,_,id_block_start,_), transferArgument(id_transfer_jump,ctxt,_). 
+
+// return after a function call: the result value depends on msg.sender -> see `transferSender.sol`, `20.sol`, `recursiveRequireCall.sol`
+containsSender(id_derived, ctxt_previous) :- containsSender(id_stmt_return,ctxt), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt,_), argument(id_derived, id_block_next, index), blockChain(id_block_start_1,id_block_next), jump(id_transfer_jump_1,_,id_block_start_1,_), transferArgument(id_transfer_jump_1,ctxt_previous,_). // case where the jump returns to a block that is iteself called by another function
+containsSender(id_derived, "UCall") :- containsSender(id_stmt_return,ctxt), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt,_), argument(id_derived, id_block_next, index), blockChain(id_block_start_1,id_block_next), function(id_block_start_1,_). // case where the jump return to a block called by the user 
+
 containsSender(id_derived, ctxt) :- derivesFrom(id_derived,id_taint), containsSender(id_taint, ctxt).
 
 
@@ -204,13 +210,14 @@ containsSender(id_derived, ctxt) :- derivesFrom(id_derived,id_taint), containsSe
 potentialGuards(id_stmt, ctxt) :- 
     (
         containsSender(id_stmt, ctxt), branch(_,_,_,_,_,id_stmt); // potential guard if it is the condition of a branch
-        containsSender(id_stmt, ctxt), transferArgument(id_transfer,id_stmt,_), return(id_transfer,id_block_end), jump(_,_,id_block_start,id_block_next), blockFollows(id_block_start,id_block_end), branch(_,_,id_block_next,_,_,id_condition), argument(id_condition,id_block_next,_)
+        containsSender(id_stmt, ctxt), transferArgument(id_transfer,id_stmt,_), return(id_transfer,id_block_end), jump(_,_,id_block_start,id_block_next), blockFollows(id_block_start,id_block_end), branch(_,_,id_block_next,_,_,id_condition), argument(id_condition,id_block_next,_) //TODO: this was necessary for 18.sol, but I'm not sure why
     ),
     !previousInvalidGuards(id_stmt, ctxt).
 
 
 // Get trusted blocks
 potentialTrustedBlocks(id_block, id_guard, ctxt) :- potentialGuards(id_guard, ctxt), blockStmt(id_block, id_guard).
+potentialTrustedBlocks(id_block, id_guard_arg, ctxt) :- potentialGuards(id_guard_arg, ctxt), argument(id_guard_arg,id_block,_).
 potentialTrustedBlocks(id_block, id_guard, ctxt) :-
     branch(_,_,_,id_block_guarded_true,id_block_guarded_false,_),
     blockChain(id_block_start, id_block_guarded_true),
@@ -268,7 +275,6 @@ untrustedVariablesFromState(id_derived, ctxt) :- // base case
 untrustedVariablesFromState(id_derived, ctxt) :- // derivatives
     (
         untrustedVariablesFromState(ctxt,_), transferArgument(id_transfer, ctxt, index), jump(id_transfer,_,id_block_to,_), argument(id_derived, id_block_to, index);
-        // untrustedVariablesFromState(id_stmt_return,ctxt), untrustedVariablesFromState(ctxt,ctxt_previous), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt,_), argument(id_derived, id_block_next, index);
         untrustedVariablesFromState(id_stmt_return,ctxt_previous), untrustedVariablesFromState(ctxt_previous,ctxt), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt_previous,_), argument(id_derived, id_block_next, index);
         untrustedVariablesFromState(id_derived,"UCall"), blockStmt(id_block,id_derived), blockChain(id_block_start,id_block), jump(id_transfer_jump,_,id_block_start,_), transferArgument(id_transfer_jump,ctxt,_);
         derivesFrom(id_derived,id_taint), untrustedVariablesFromState(id_taint, ctxt)
@@ -329,6 +335,7 @@ invalidGuards(id_stmt,ctxt) :-
 .output argument
 .output transferArgument
 .output jump
+.output branch
 .output return
 .output blockChain
 .output untrustedVariables
@@ -348,5 +355,5 @@ invalidGuards(id_stmt,ctxt) :-
 
 //TODO: fix:
     //recursiveRequireCall (critical: context needs to be a list of arguments when having recursive function calls?)
-    //18
-    //20,22,23,24
+    //15 (hard to fix)
+    //22,24,35

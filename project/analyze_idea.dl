@@ -161,6 +161,7 @@ derivesFrom(id_derived, id_taint) :- bop(id_derived,id_taint,_,_).
 derivesFrom(id_derived, id_taint) :- bop(id_derived,_,id_taint,_).
 derivesFrom(id_derived, id_taint) :- goto(id_transfer,_,id_block_to), transferArgument(id_transfer,id_taint,index), argument(id_derived,id_block_to,index). // derivation through arguments after a goto (after a branch)
 derivesFrom(id_derived, id_taint) :- selfdestruct(id_derived, id_taint).
+derivesFrom(id_derived, id_taint) :- store(id_derived,_,id_taint).
 derivesFrom(id_derived, id_taint) :- derivesFrom(id_intermediary, id_taint), derivesFrom(id_derived, id_intermediary).
 derivesFrom(id_derived, id_taint) :-
     branch(_,_,_,id_block_true,id_block_false,id_taint),
@@ -216,8 +217,13 @@ potentialGuards(id_stmt, ctxt) :-
 
 
 // Get trusted blocks
-potentialTrustedBlocks(id_block, id_guard, ctxt) :- potentialGuards(id_guard, ctxt), blockStmt(id_block, id_guard).
-potentialTrustedBlocks(id_block, id_guard_arg, ctxt) :- potentialGuards(id_guard_arg, ctxt), argument(id_guard_arg,id_block,_).
+potentialTrustedBlocks(id_block, id_guard, ctxt) :- 
+    potentialGuards(id_guard, ctxt),
+    (
+        blockStmt(id_block, id_guard);
+        argument(id_guard,id_block,_)
+    ).
+
 potentialTrustedBlocks(id_block, id_guard, ctxt) :-
     branch(_,_,_,id_block_guarded_true,id_block_guarded_false,_),
     blockChain(id_block_start, id_block_guarded_true),
@@ -264,7 +270,7 @@ potentialTrustedBlocks(id_block,id_guard,ctxt) :- goto(_,id_block,id_block_guard
 
 
 // Get untrusted state variables, and untrusted variables deriving from it
-untrustedStateVariables(field) :- store(_,field,id_stmt), untrustedVariables(id_stmt,_).
+untrustedStateVariables(field) :- store(id_stmt,field,_), untrustedVariables(id_stmt,_).
 
 untrustedVariablesFromState(id_derived, ctxt) :- // base case
     (
@@ -322,7 +328,14 @@ invalidGuards(id_stmt,ctxt) :-
     (
         untrustedVariables(id_stmt,ctxt);
         potentialUntrustedVariablesForGuards(id_stmt,ctxt)
-        //untrustedVariablesFromState(id_derived, ctxt)
+    ).
+invalidGuards(id_stmt,ctxt) :-
+    potentialGuards(id_stmt,ctxt),
+    blockStmt(id_block,id_stmt),
+    untrustedVariables(condition,ctxt),
+    (
+        branch(_,_,_,id_block,_,condition);
+        branch(_,_,_,_,id_block,condition)
     ).
 
 
@@ -354,4 +367,6 @@ invalidGuards(id_stmt,ctxt) :-
 .output invalidGuards(IO=file, filename="../previousInvalidGuards.csv")
 
 //TODO: fix:
+    //recursiveRequireCall (critical: context needs to be a list of arguments when having recursive function calls?)
     //15, 22, 24 (hard to fix: come from the consideration that state variables are tainted forever, but it is false as we assume a function call to be atomic)
+    //35

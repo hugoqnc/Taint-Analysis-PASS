@@ -16,6 +16,7 @@ contract Contract {
 
   function foo(address x) public {
     set_a1(owner);
+    a = owner;
     set_a1(x);
     set_a1(owner);
     require(msg.sender == a); // guard becaus a was set to owner in the previous statement

@@ -264,12 +264,83 @@ potentialTrustedBlocks(id_block,id_guard,ctxt) :- goto(_,id_block,id_block_guard
 
 
 // Get untrusted state variables, and untrusted variables deriving from it
+
+
+// WORK IN PROGRESS BELOW
+// Compute more precisely which load statements are tainted
+
+.decl jumpFromTo(id_block_from: Block, id_block_to: Block)
+jumpFromTo(id_block_from, id_block_to) :-
+    jump(_,id_block_from,id_block_to,_);
+    blockChain(id_block_start, id_block_to), jump(_,id_block_from,id_block_start,_);
+    jumpFromTo(id_block_from, id_block), jumpFromTo(id_block, id_block_to).
+.output jumpFromTo
+
+.decl blocksBetween(id_block_start: Block, id_block_end: Block, id_block: Block)
+blocksBetween(id_block_start, id_block_end, id_block) :- blockFollows(id_block_start,id_block), id_block != id_block_end, id_block_start != id_block_end, block(id_block_end).
+blocksBetween(id_block_start, id_block_end, id_block_1) :- blocksBetween(id_block_start, id_block_end, id_block), blockFollows(id_block,id_block_1), id_block_1 != id_block_end, block(id_block_end).
+
+
+.decl storeSuccession(function: Name, id_block_call: Block, id_block_store: Block, id_stmt_store: SSA, field: Name, id_stmt_stored: SSA, counter: number)
+
+storeSuccession(function, id_block_call, id_block_store, id_stmt_store, field, id_stmt_stored, counter) :- 
+    function(id_block_start,function), function != "Constructor",
+    blockChain(id_block_start,id_block_call),
+    (
+        blockStmt(id_block_call,id_stmt_store), id_block_call=id_block_store;
+        jumpFromTo(id_block_call,id_block_store), blockStmt(id_block_store,id_stmt_store)
+    ),
+    store(id_stmt_store, field, id_stmt_stored),
+    counter = count:{blocksBetween(id_block_start,id_block_call,_)}.
+
+.output storeSuccession
+
+.decl followsRecursively(id_stmt_start: SSA, id_stmt_end: SSA)
+
+followsRecursively(id_stmt_start,id_stmt_end) :-
+    (
+        follows(id_stmt_start, id_stmt_end);
+        followsRecursively(id_stmt_start,id_stmt), follows(id_stmt, id_stmt_end)
+    ).
+
+.decl distanceStoreToLoad(function: Name, field: Name,  id_block_call_load: Block, id_block_load: Block, id_stmt_load: SSA, id_block_call_store: Block, id_block_store: Block, id_stmt_store: SSA, distance: number)
+
+distanceStoreToLoad(function, field, id_block_call_load, id_block_load, id_stmt_load, id_block_call_store, id_block_store, id_stmt_store, distance) :-
+    storeSuccession(function, id_block_call_store, id_block_store, id_stmt_store, field, id_stmt_stored, counter_store), //store stmt
+    ( //load stmt
+        function(id_block_start_load,function),
+        blockChain(id_block_start_load,id_block_call_load),
+        (
+            blockStmt(id_block_call_load,id_stmt_load), id_block_call_load=id_block_load;
+            jumpFromTo(id_block_call_load,id_block_load), blockStmt(id_block_load,id_stmt_load)
+        ),
+        load(id_stmt_load, field),
+        counter_load = count:{blocksBetween(id_block_start_load,id_block_call_load,_)}
+    ),
+    ( //store is before load 
+        counter_load > counter_store;
+        counter_load = counter_store, followsRecursively(id_stmt_store,id_stmt_load);
+        counter_load = counter_store, id_block_call_load != id_block_load
+    ),
+    distance = counter_load-counter_store. //distance
+    
+.output distanceStoreToLoad
+
+.decl closestStoreToLoad(function: Name, field: Name,  id_block_call_load: Block, id_block_load: Block, id_stmt_load: SSA, id_block_call_store: Block, id_block_store: Block, id_stmt_store: SSA)
+
+closestStoreToLoad(function, field, id_block_call_load, id_block_load, id_stmt_load, id_block_call_store, id_block_store, id_stmt_store) :- _ = min distance:{distanceStoreToLoad(function, field, id_block_call_load, id_block_load, id_stmt_load, id_block_call_store, id_block_store, id_stmt_store, distance)}.
+
+.output closestStoreToLoad
+
+// TODO: change BELOW to be more precise (24.sol)
+
 untrustedStateVariables(field) :- store(_,field,id_stmt), untrustedVariables(id_stmt,_).
 
 untrustedVariablesFromState(id_derived, ctxt) :- // base case
+    untrustedStateVariables(field),
     (
-        load(id_derived,field), untrustedStateVariables(field), ctxt="UCall";
-        load(id_derived,field), untrustedStateVariables(field), blockStmt(id_block,id_derived), blockChain(id_block_start, id_block), jump(id_transfer_jump,_,id_block_start,_), transferArgument(id_transfer_jump,ctxt,_)
+        load(id_derived,field), ctxt="UCall";
+        load(id_derived,field), blockStmt(id_block,id_derived), blockChain(id_block_start, id_block), jump(id_transfer_jump,_,id_block_start,_), transferArgument(id_transfer_jump,ctxt,_)
     ).
 
 untrustedVariablesFromState(id_derived, ctxt) :- // derivatives
@@ -346,6 +417,7 @@ invalidGuards(id_stmt,ctxt) :-
 .output potentialGuards
 .output potentialTrustedBlocks
 .output invalidGuards
+.output store
 // .output derivesFrom
 // .output derivesFrom
 // .output blockFollows

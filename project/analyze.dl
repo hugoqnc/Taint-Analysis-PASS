@@ -332,12 +332,36 @@ closestStoreToLoad(function, field, id_block_call_load, id_block_load, id_stmt_l
 
 .output closestStoreToLoad
 
+
+.decl lastStoreUntrusted(field: Name)
+lastStoreUntrusted(field) :- 
+    function(_,function),
+    maxDistance = max counter:{storeSuccession(function, _, _, _, field, id_stmt_stored, counter)},
+    untrustedVariables(id_stmt_stored,_).
+    
+.output lastStoreUntrusted
+
+
 // TODO: change BELOW to be more precise (24.sol)
 
 untrustedStateVariables(field) :- store(_,field,id_stmt), untrustedVariables(id_stmt,_).
 
 untrustedVariablesFromState(id_derived, ctxt) :- // base case
-    untrustedStateVariables(field),
+    (
+        (
+            closestStoreToLoad(_, field, id_block_call_load, id_block_load, id_stmt_load, id_block_call_store, id_block_store, id_stmt_store),
+            store(id_stmt_store,field,id_stmt_stored),
+            (
+                untrustedVariables(id_stmt_stored,_), id_block_call_store=id_block_store;
+                untrustedVariables(id_stmt_stored,_), jump(id_transfer_jump,id_block_call_store,id_block_to,_), transferArgument(id_transfer_jump,id_stmt_jump,_), untrustedVariables(id_stmt_jump,_), id_block_call_store!=id_block_store
+            )
+        );
+        (   
+            blockStmt(id_block_call_load,id_derived),
+            !closestStoreToLoad(_, field, id_block_call_load, _, _, _, _, _),
+            lastStoreUntrusted(field)
+        )
+    ),
     (
         load(id_derived,field), ctxt="UCall";
         load(id_derived,field), blockStmt(id_block,id_derived), blockChain(id_block_start, id_block), jump(id_transfer_jump,_,id_block_start,_), transferArgument(id_transfer_jump,ctxt,_)

@@ -133,7 +133,7 @@ msgSender(id) :- builtinVariable(id, "SENDER").
 .decl derivesFrom(id_derived: SSA, id_taint: SSA) // independently of context, tells you if some variable depends on another through basic (explicit) operations or through implicit branching
 
 .decl blockChain(id_block_start: Block, id_block: Block) // contains blocks that are linked by jump/branch/goto: it corresponds to chain of blocks linked by arrows on the --visualize schema. id_block_start is a block that is a callable function.
-.decl blockFollows(id_block: Block, id_block_next: Block)
+.decl blockFollows(id_block: Block, id_block_next: Block) // id_block_next follows id_block on the blockChain
 .decl containsSender(id_stmt: SSA, ctxt: SSA)
 
 .decl potentialGuards(id_stmt: SSA, ctxt: SSA)
@@ -142,9 +142,18 @@ msgSender(id) :- builtinVariable(id, "SENDER").
 .decl potentialTrustedBlocks(id_block: Block, id_guard: SSA, ctxt: SSA)
 .decl untrustedBlocks(id_block: Block, ctxt: SSA)
 
+.decl jumpFromTo(id_block_from: Block, id_block_to: Block)
+.decl blocksBetween(id_block_start: Block, id_block_end: Block, id_block: Block)
+.decl storeSuccession(function: Name, id_block_call: Block, id_block_store: Block, id_stmt_store: SSA, field: Name, id_stmt_stored: SSA, counter: number)
+.decl followsRecursively(id_stmt_start: SSA, id_stmt_end: SSA)
+.decl distanceStoreToLoad(function: Name, field: Name,  id_block_call_load: Block, id_block_load: Block, id_stmt_load: SSA, id_block_call_store: Block, id_block_store: Block, id_stmt_store: SSA, distance: number)
+.decl closestStoreToLoad(function: Name, field: Name,  id_block_call_load: Block, id_block_load: Block, id_stmt_load: SSA, id_block_call_store: Block, id_block_store: Block, id_stmt_store: SSA)
+.decl lastStoreUntrusted(id_stmt_store: SSA, field: Name)
+.decl inevitableSelfDestruct(function: Name)
+.decl functionContainsBranch(function: Name)
+
 .decl potentialUntrustedVariablesForGuards(id_stmt: SSA, ctxt: SSA)
 .decl untrustedVariables(id_stmt: SSA, ctxt: SSA)
-.decl untrustedStateVariables(field: Name)
 .decl untrustedVariablesFromState(id_stmt: SSA, ctxt: SSA)
 
 //_________________________________________________________
@@ -263,25 +272,14 @@ potentialTrustedBlocks(id_block,cat(id_guard_true, cat(" ", id_guard_false)),ctx
 potentialTrustedBlocks(id_block,id_guard,ctxt) :- goto(_,id_block,id_block_guarded), potentialTrustedBlocks(id_block_guarded,id_guard,ctxt). 
 
 
-// Get untrusted state variables, and untrusted variables deriving from it
-
-
-// WORK IN PROGRESS BELOW
-// Compute more precisely which load statements are tainted
-
-.decl jumpFromTo(id_block_from: Block, id_block_to: Block)
+// Compute (precisely) which load statements are tainted
 jumpFromTo(id_block_from, id_block_to) :-
     jump(_,id_block_from,id_block_to,_);
     blockChain(id_block_start, id_block_to), jump(_,id_block_from,id_block_start,_);
     jumpFromTo(id_block_from, id_block), jumpFromTo(id_block, id_block_to).
-.output jumpFromTo
 
-.decl blocksBetween(id_block_start: Block, id_block_end: Block, id_block: Block)
 blocksBetween(id_block_start, id_block_end, id_block) :- blockFollows(id_block_start,id_block), id_block != id_block_end, id_block_start != id_block_end, block(id_block_end).
 blocksBetween(id_block_start, id_block_end, id_block_1) :- blocksBetween(id_block_start, id_block_end, id_block), blockFollows(id_block,id_block_1), id_block_1 != id_block_end, block(id_block_end).
-
-
-.decl storeSuccession(function: Name, id_block_call: Block, id_block_store: Block, id_stmt_store: SSA, field: Name, id_stmt_stored: SSA, counter: number)
 
 storeSuccession(function, id_block_call, id_block_store, id_stmt_store, field, id_stmt_stored, counter) :- 
     function(id_block_start,function), function != "Constructor",
@@ -293,17 +291,11 @@ storeSuccession(function, id_block_call, id_block_store, id_stmt_store, field, i
     store(id_stmt_store, field, id_stmt_stored),
     counter = count:{blocksBetween(id_block_start,id_block_call,_)}.
 
-.output storeSuccession
-
-.decl followsRecursively(id_stmt_start: SSA, id_stmt_end: SSA)
-
 followsRecursively(id_stmt_start,id_stmt_end) :-
     (
         follows(id_stmt_start, id_stmt_end);
         followsRecursively(id_stmt_start,id_stmt), follows(id_stmt, id_stmt_end)
     ).
-
-.decl distanceStoreToLoad(function: Name, field: Name,  id_block_call_load: Block, id_block_load: Block, id_stmt_load: SSA, id_block_call_store: Block, id_block_store: Block, id_stmt_store: SSA, distance: number)
 
 distanceStoreToLoad(function, field, id_block_call_load, id_block_load, id_stmt_load, id_block_call_store, id_block_store, id_stmt_store, distance) :-
     storeSuccession(function, id_block_call_store, id_block_store, id_stmt_store, field, id_stmt_stored, counter_store), //store stmt
@@ -324,28 +316,33 @@ distanceStoreToLoad(function, field, id_block_call_load, id_block_load, id_stmt_
     ),
     distance = counter_load-counter_store. //distance
     
-.output distanceStoreToLoad
-
-.decl closestStoreToLoad(function: Name, field: Name,  id_block_call_load: Block, id_block_load: Block, id_stmt_load: SSA, id_block_call_store: Block, id_block_store: Block, id_stmt_store: SSA)
-
 closestStoreToLoad(function, field, id_block_call_load, id_block_load, id_stmt_load, id_block_call_store, id_block_store, id_stmt_store) :- _ = min distance:{distanceStoreToLoad(function, field, id_block_call_load, id_block_load, id_stmt_load, id_block_call_store, id_block_store, id_stmt_store, distance)}.
 
-.output closestStoreToLoad
-
-
-.decl lastStoreUntrusted(field: Name)
-lastStoreUntrusted(field) :- 
+lastStoreUntrusted(id_stmt_store, field) :- 
     function(_,function),
-    maxDistance = max counter:{storeSuccession(function, _, _, _, field, id_stmt_stored, counter)},
-    untrustedVariables(id_stmt_stored,_).
-    
-.output lastStoreUntrusted
+    maxDistance = max counter:{storeSuccession(function, _, _, id_stmt_store, field, id_stmt_stored, counter)},
+    untrustedVariables(id_stmt_stored,_),
+    !inevitableSelfDestruct(function).
+
+inevitableSelfDestruct(function) :-  // for 15.sol
+    // TODO: this part is NOT EXHAUSTIVE AT ALL
+    // It should take the `lastStoreUntrusted` statement, and see if the function inveitably goes through selfDestruct when it goes through this statement
+    // The implementation below is much simpler: it says that the function has an inevitable selfDestruct if there is a selfDestruct in the function, and there are no branches
+    // It does not take into account: branches with multiple selfDestruct or function calls
+    selfdestruct(id_stmt,_),
+    blockStmt(id_block,id_stmt),
+    blockChain(id_block_start,id_block),
+    function(id_block_start,function),
+    !functionContainsBranch(function).
+
+functionContainsBranch(function) :- // except require branch
+    function(id_block_start,function),
+    branch(_,_,id_block_start_branch,_,id_block_false,_),
+    !revert(_,id_block_false), // remove require, that have `revert` as false branch
+    blockChain(id_block_start,id_block_start_branch).
 
 
-// TODO: change BELOW to be more precise (24.sol)
-
-untrustedStateVariables(field) :- store(_,field,id_stmt), untrustedVariables(id_stmt,_).
-
+// Get untrusted variables deriving from untrusted state variables
 untrustedVariablesFromState(id_derived, ctxt) :- // base case
     (
         (
@@ -359,7 +356,7 @@ untrustedVariablesFromState(id_derived, ctxt) :- // base case
         (   
             blockStmt(id_block_call_load,id_derived),
             !closestStoreToLoad(_, field, id_block_call_load, _, _, _, _, _),
-            lastStoreUntrusted(field)
+            lastStoreUntrusted(_, field)
         )
     ),
     (
@@ -435,13 +432,17 @@ invalidGuards(id_stmt,ctxt) :-
 .output blockChain
 .output untrustedVariables
 .output untrustedVariablesFromState
-.output untrustedStateVariables
 .output potentialUntrustedVariablesForGuards
 .output previousInvalidGuards
 .output potentialGuards
 .output potentialTrustedBlocks
 .output invalidGuards
 .output store
+.output storeSuccession
+.output distanceStoreToLoad
+.output closestStoreToLoad
+.output lastStoreUntrusted
+.output inevitableSelfDestruct
 // .output derivesFrom
 // .output derivesFrom
 // .output blockFollows
@@ -449,5 +450,3 @@ invalidGuards(id_stmt,ctxt) :-
 // Export current untrusted variables, so they can be read in next round
 .output invalidGuards(IO=file, filename="../previousInvalidGuards.csv")
 
-//TODO: fix:
-    //15, 22, 24 (hard to fix: come from the consideration that state variables are tainted forever, but it is false as we assume a function call to be atomic)

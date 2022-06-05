@@ -330,7 +330,9 @@ closestStoreToLoad(function, field, id_block_call_load, id_block_load, id_stmt_l
 
 lastStoreUntrusted(id_stmt_store, field) :- 
     function(_,function),
-    maxDistance = max counter:{storeSuccession(function, _, _, id_stmt_store, field, id_stmt_stored, counter)},
+    id_stmt_store_1 = id_stmt_store,
+    field_1 = field,
+    maxDistance = max counter:{storeSuccession(function, _, _, id_stmt_store_1, field_1, id_stmt_stored, counter)},
     untrustedVariables(id_stmt_stored,_),
     !inevitableSelfDestruct(function).
 

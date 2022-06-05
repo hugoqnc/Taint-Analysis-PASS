@@ -316,7 +316,17 @@ distanceStoreToLoad(function, field, id_block_call_load, id_block_load, id_stmt_
     ),
     distance = counter_load-counter_store. //distance
     
-closestStoreToLoad(function, field, id_block_call_load, id_block_load, id_stmt_load, id_block_call_store, id_block_store, id_stmt_store) :- _ = min distance:{distanceStoreToLoad(function, field, id_block_call_load, id_block_load, id_stmt_load, id_block_call_store, id_block_store, id_stmt_store, distance)}.
+closestStoreToLoad(function, field, id_block_call_load, id_block_load, id_stmt_load, id_block_call_store, id_block_store, id_stmt_store) :-
+    distanceStoreToLoad(function, field, id_block_call_load, id_block_load, id_stmt_load, id_block_call_store, id_block_store, id_stmt_store, min_dist),
+    function_1 = function,
+    field_1 = field,
+    id_block_call_load_1 = id_block_call_load,
+    id_block_load_1 = id_block_load,
+    id_stmt_load_1 = id_stmt_load,
+    id_block_call_store_1 = id_block_call_store,
+    id_block_store_1 = id_block_store,
+    id_stmt_store_1 = id_stmt_store,
+    min_dist = min distance:{distanceStoreToLoad(function_1, field_1, id_block_call_load_1, id_block_load_1, id_stmt_load_1, _, _, _, distance)}.
 
 lastStoreUntrusted(id_stmt_store, field) :- 
     function(_,function),

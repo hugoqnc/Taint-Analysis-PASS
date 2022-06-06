@@ -30,3 +30,5 @@ nested_branch2; S21
 complexGuardCondition; 
 complexGuardCondition; S22
 nested; S22
+multipleReturnVals; 
+multipleReturnVals2; S12

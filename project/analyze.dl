@@ -387,6 +387,9 @@ untrustedVariablesFromState(id_derived, ctxt) :- // derivatives
         derivesFrom(id_derived,id_taint), untrustedVariablesFromState(id_taint, ctxt)
     ).
 
+// return after a function call: the result value is untrusted because of a state variable
+untrustedVariablesFromState(id_derived, ctxt_previous) :- untrustedVariablesFromState(id_stmt_return,ctxt), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt,_), argument(id_derived, id_block_next, index), blockChain(id_block_start_1,id_block_next), jump(id_transfer_jump_1,_,id_block_start_1,_), transferArgument(id_transfer_jump_1,ctxt_previous,_). // case where the jump returns to a block that is iteself called by another function
+untrustedVariablesFromState(id_derived, "UCall") :- untrustedVariablesFromState(id_stmt_return,ctxt), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt,_), argument(id_derived, id_block_next, index), blockChain(id_block_start_1,id_block_next), function(id_block_start_1,_). // case where the jump return to a block called by the user 
 
 // Get untrusted variables
 untrustedVariables(id_stmt, "UCall") :- // base case
@@ -461,6 +464,7 @@ invalidGuards(id_stmt,ctxt) :-
 // .output derivesFrom
 // .output derivesFrom
 // .output blockFollows
+.output selfdestruct
 
 // Export current untrusted variables, so they can be read in next round
 .output invalidGuards(IO=file, filename="../previousInvalidGuards.csv")

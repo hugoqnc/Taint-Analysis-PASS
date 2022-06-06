@@ -24,9 +24,9 @@ fctCallInRequire2; S31
 fctCallInRequire3; 
 fctCallInRequire3; 
 diffReturnVals;
-diffReturnVals2; S16
+diffReturnVals2;
 nested_branch; 
 nested_branch2; S21
 complexGuardCondition; 
-complexGuardCondition; S22
-nested; S22
+complexGuardCondition2; S22
+nested;

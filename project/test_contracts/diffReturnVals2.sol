@@ -15,9 +15,9 @@ contract Contract {
     return user;
   }
 
-  function kill() public {
+  function kill(address payable a) public {
     address y = foo(msg.sender);
     require(y == msg.sender); // not a guard, b.c. foo() could return an untrusted value (user)
-    selfdestruct(owner);
+    selfdestruct(a);
   }
 }

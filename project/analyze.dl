@@ -406,7 +406,10 @@ untrustedVariables(id_derived, ctxt) :- // derivatives
         untrustedVariables(id_derived,"UCall"), blockStmt(id_block,id_derived), blockChain(id_block_start,id_block), jump(id_transfer_jump,_,id_block_start,_), transferArgument(id_transfer_jump,ctxt,_); // this is when a function calls another function that uses a msg.sender or derivative -> the taints is propagated to the particular context of the function call
         derivesFrom(id_derived,id_taint), untrustedVariables(id_taint, ctxt)
     ),
-    blockStmt(id_block,id_derived), !potentialTrustedBlocks(id_block,_,ctxt).
+    (
+        blockStmt(id_block,id_derived), !potentialTrustedBlocks(id_block,_,ctxt);
+        argument(id_derived, id_block,_), !potentialTrustedBlocks(id_block,_,ctxt)
+    ).
 
 untrustedVariables(id_derived, ctxt) :- untrustedVariablesFromState(id_derived, ctxt). // derivatives from state variables 
 
@@ -425,6 +428,8 @@ potentialUntrustedVariablesForGuards(id_derived, ctxt) :- // derivatives
 
 potentialUntrustedVariablesForGuards(id_derived, ctxt) :- store(id_stmt_store,field,id_taint), potentialUntrustedVariablesForGuards(id_taint,ctxt), load(id_derived,field), blockStmt(id_block_store,id_stmt_store), blockStmt(id_block_load,id_derived), potentialTrustedBlocks(id_block_store,id_guard,ctxt), potentialTrustedBlocks(id_block_load,id_guard,ctxt).
 //TODO: not sure that it is a perfect solution, try to test `stateAndGuard.sol` with more difficult cases
+// It does not take order of load and sotre into account?
+
 
 invalidGuards(id_stmt,ctxt) :- previousInvalidGuards(id_stmt,ctxt).
 invalidGuards(id_stmt,ctxt) :-

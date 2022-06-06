@@ -18,3 +18,15 @@ new_4; S18
 new_5; 
 new_6; S18, S24
 new_7; S07
+contextsOfStoredVariables; 
+fctCallInRequire; S29
+fctCallInRequire2; S31
+fctCallInRequire3; 
+fctCallInRequire3; 
+diffReturnVals;
+diffReturnVals2; S16
+nested_branch; 
+nested_branch2; S21
+complexGuardCondition; 
+complexGuardCondition; S22
+nested; S22

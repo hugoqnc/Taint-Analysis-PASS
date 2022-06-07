@@ -244,12 +244,14 @@ potentialTrustedBlocks(id_block, id_guard, ctxt) :- jump(id_transfer_jump,id_blo
 potentialTrustedBlocks(id_block, id_guard, ctxt) :- jump(_,id_block_guarded,_,id_block), potentialTrustedBlocks(id_block_guarded, id_guard,ctxt). // the block to which the jump returns is in the same blockchain as the block that initiated the jump, so it has the same context 
 
 // If a block called by another function has a guard (with a jump), then the block to which it returns is also guarded, under all possible contexts (in particular, under the context `UCall`)
-potentialTrustedBlocks(id_block, id_guard, ctxt_previous) :-
-    jump(id_transfer_jump,id_block_jump,id_block_guarded,id_block), potentialTrustedBlocks(id_block_guarded,id_guard,ctxt), blockChain(id_block_start,id_block_jump), jump(id_transfer_jump_previous,_,id_block_start,_), transferArgument(id_transfer_jump_previous,ctxt_previous,_),
-    (
-        transferArgument(id_transfer_jump,ctxt,_);
-        !transferArgument(id_transfer_jump,_,_) // case where the function calls another function without arguments
-    ).
+
+//TODO: I deleted the block below: it helps in some case, but are there some cases not covered?
+// potentialTrustedBlocks(id_block, id_guard, ctxt_previous) :-
+//     jump(id_transfer_jump,id_block_jump,id_block_guarded,id_block), potentialTrustedBlocks(id_block_guarded,id_guard,ctxt), blockChain(id_block_start,id_block_jump), jump(id_transfer_jump_previous,_,id_block_start,_), transferArgument(id_transfer_jump_previous,ctxt_previous,_),
+//     (
+//         transferArgument(id_transfer_jump,ctxt,_);
+//         !transferArgument(id_transfer_jump,_,_) // case where the function calls another function without arguments
+//     ).
 potentialTrustedBlocks(id_block, id_guard, "UCall") :-
     jump(id_transfer_jump,_,id_block_guarded,id_block), potentialTrustedBlocks(id_block_guarded,id_guard,ctxt),
     (
@@ -259,12 +261,13 @@ potentialTrustedBlocks(id_block, id_guard, "UCall") :-
 
 // If a block is guarded, then the blocks before it in the same function should also be guarded, provided that all branches are guarded (there is no unguarded path)
 potentialTrustedBlocks(id_block,id_guard,ctxt) :-
-    jump(id_transfer_jump,id_block,_,id_block_guarded), potentialTrustedBlocks(id_block_guarded,id_guard,ctxt),
-    (
-        transferArgument(id_transfer_jump,ctxt,_);
-        !transferArgument(id_transfer_jump,_,_)
-    ).
+    jump(id_transfer_jump,id_block,_,id_block_guarded), potentialTrustedBlocks(id_block_guarded,id_guard,ctxt).
+    // (
+    //     transferArgument(id_transfer_jump,ctxt,_);
+    //     !transferArgument(id_transfer_jump,_,_)
+    // ).
     //TODO: not sure of the part with transferArgument in this case 
+
 potentialTrustedBlocks(id_block,id_guard,ctxt) :- branch(_,_,id_block,id_block_true,id_block_false,_), potentialTrustedBlocks(id_block_true,id_guard,ctxt), potentialTrustedBlocks(id_block_false,id_guard,ctxt). // both branches should be guarded
 potentialTrustedBlocks(id_block,cat(id_guard_true, cat(" ", id_guard_false)),ctxt) :- branch(_,_,id_block,id_block_true,id_block_false,_), potentialTrustedBlocks(id_block_true,id_guard_true,ctxt), potentialTrustedBlocks(id_block_false,id_guard_false,ctxt), id_guard_true!=id_guard_false, strlen(id_guard_true)=3, strlen(id_guard_false)=3. // each branch is guarded with a different guard (but under the same context). Then the upper block is guarded with a combination of the 2 guards (see 18.sol)
 //TODO: using strlen=3 is probably not recursive enough
@@ -291,10 +294,10 @@ storeSuccession(function, id_block_call, id_block_store, id_stmt_store, field, i
     store(id_stmt_store, field, id_stmt_stored),
     counter = count:{blocksBetween(id_block_start,id_block_call,_)}.
 
-followsRecursively(id_stmt_start,id_stmt_end) :-
+followsRecursively(id_stmt_end,id_stmt_start) :-
     (
-        follows(id_stmt_start, id_stmt_end);
-        followsRecursively(id_stmt_start,id_stmt), follows(id_stmt, id_stmt_end)
+        follows(id_stmt_end,id_stmt_start);
+        followsRecursively(id_stmt,id_stmt_start), follows(id_stmt_end,id_stmt)
     ).
 
 distanceStoreToLoad(function, field, id_block_call_load, id_block_load, id_stmt_load, id_block_call_store, id_block_store, id_stmt_store, distance) :-
@@ -311,7 +314,7 @@ distanceStoreToLoad(function, field, id_block_call_load, id_block_load, id_stmt_
     ),
     ( //store is before load 
         counter_load > counter_store;
-        counter_load = counter_store, followsRecursively(id_stmt_store,id_stmt_load);
+        counter_load = counter_store, followsRecursively(id_stmt_load,id_stmt_store);
         counter_load = counter_store, id_block_call_load != id_block_load
     ),
     distance = counter_load-counter_store. //distance
@@ -426,9 +429,43 @@ potentialUntrustedVariablesForGuards(id_derived, ctxt) :- // derivatives
         derivesFrom(id_derived,id_taint), potentialUntrustedVariablesForGuards(id_taint, ctxt)
     ).
 
-potentialUntrustedVariablesForGuards(id_derived, ctxt) :- store(id_stmt_store,field,id_taint), potentialUntrustedVariablesForGuards(id_taint,ctxt), load(id_derived,field), blockStmt(id_block_store,id_stmt_store), blockStmt(id_block_load,id_derived), potentialTrustedBlocks(id_block_store,id_guard,ctxt), potentialTrustedBlocks(id_block_load,id_guard,ctxt).
-//TODO: not sure that it is a perfect solution, try to test `stateAndGuard.sol` with more difficult cases
-// It does not take order of load and sotre into account?
+
+// Get potential untrusted variables deriving from potentially untrusted state variables, to evaluate guards
+.decl potentiallUntrustedVariablesFromStateForGuards(id_derived: SSA, ctxt: SSA)
+potentiallUntrustedVariablesFromStateForGuards(id_derived, ctxt) :- // base case
+    (
+        (
+            closestStoreToLoad(_, field, id_block_call_load, id_block_load, id_stmt_load, id_block_call_store, id_block_store, id_stmt_store),
+            store(id_stmt_store,field,id_stmt_stored),
+            (
+                potentialUntrustedVariablesForGuards(id_stmt_stored,_), id_block_call_store=id_block_store;
+                potentialUntrustedVariablesForGuards(id_stmt_stored,_), jump(id_transfer_jump,id_block_call_store,id_block_to,_), transferArgument(id_transfer_jump,id_stmt_jump,_), potentialUntrustedVariablesForGuards(id_stmt_jump,_), id_block_call_store!=id_block_store
+            )
+        );
+        (   
+            blockStmt(id_block_call_load,id_derived),
+            !closestStoreToLoad(_, field, id_block_call_load, _, _, _, _, _),
+            lastStoreUntrusted(_, field)
+        )
+    ),
+    (
+        load(id_derived,field), ctxt="UCall";
+        load(id_derived,field), blockStmt(id_block,id_derived), blockChain(id_block_start, id_block), jump(id_transfer_jump,_,id_block_start,_), transferArgument(id_transfer_jump,ctxt,_)
+    ).
+
+potentiallUntrustedVariablesFromStateForGuards(id_derived, ctxt) :- // derivatives
+    (
+        potentiallUntrustedVariablesFromStateForGuards(ctxt,_), transferArgument(id_transfer, ctxt, index), jump(id_transfer,_,id_block_to,_), argument(id_derived, id_block_to, index);
+        potentiallUntrustedVariablesFromStateForGuards(id_stmt_return,ctxt_previous), potentiallUntrustedVariablesFromStateForGuards(ctxt_previous,ctxt), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt_previous,_), argument(id_derived, id_block_next, index);
+        potentiallUntrustedVariablesFromStateForGuards(id_derived,"UCall"), blockStmt(id_block,id_derived), blockChain(id_block_start,id_block), jump(id_transfer_jump,_,id_block_start,_), transferArgument(id_transfer_jump,ctxt,_);
+        derivesFrom(id_derived,id_taint), potentiallUntrustedVariablesFromStateForGuards(id_taint, ctxt)
+    ).
+
+// return after a function call: the result value is untrusted because of a state variable
+potentiallUntrustedVariablesFromStateForGuards(id_derived, ctxt_previous) :- potentiallUntrustedVariablesFromStateForGuards(id_stmt_return,ctxt), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt,_), argument(id_derived, id_block_next, index), blockChain(id_block_start_1,id_block_next), jump(id_transfer_jump_1,_,id_block_start_1,_), transferArgument(id_transfer_jump_1,ctxt_previous,_). // case where the jump returns to a block that is iteself called by another function
+potentiallUntrustedVariablesFromStateForGuards(id_derived, "UCall") :- potentiallUntrustedVariablesFromStateForGuards(id_stmt_return,ctxt), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt,_), argument(id_derived, id_block_next, index), blockChain(id_block_start_1,id_block_next), function(id_block_start_1,_). // case where the jump return to a block called by the user 
+
+potentialUntrustedVariablesForGuards(id_derived, ctxt) :- potentiallUntrustedVariablesFromStateForGuards(id_derived, ctxt).
 
 
 invalidGuards(id_stmt,ctxt) :- previousInvalidGuards(id_stmt,ctxt).

@@ -129,11 +129,11 @@ msgSender(id) :- builtinVariable(id, "SENDER").
 
 .decl tainted_sinks(id: SSA)
 
-// PART 1: find variables that depend on msg.sender
 .decl derivesFrom(id_derived: SSA, id_taint: SSA) // independently of context, tells you if some variable depends on another through basic (explicit) operations or through implicit branching
 
 .decl blockChain(id_block_start: Block, id_block: Block) // contains blocks that are linked by jump/branch/goto: it corresponds to chain of blocks linked by arrows on the --visualize schema. id_block_start is a block that is a callable function.
 .decl blockFollows(id_block: Block, id_block_next: Block) // id_block_next follows id_block on the blockChain
+.decl receivesTwoBranches(id_stmt: SSA)
 .decl containsSender(id_stmt: SSA, ctxt: SSA)
 
 .decl potentialGuards(id_stmt: SSA, ctxt: SSA)
@@ -210,10 +210,35 @@ containsSender(id_derived, ctxt) :- containsSender(ctxt,_), transferArgument(id_
 containsSender(id_derived, ctxt) :- containsSender(id_derived,"UCall"), blockStmt(id_block,id_derived), blockChain(id_block_start,id_block), jump(id_transfer_jump,_,id_block_start,_), transferArgument(id_transfer_jump,ctxt,_). 
 
 // return after a function call: the result value depends on msg.sender -> see `transferSender.sol`, `20.sol`, `recursiveRequireCall.sol`
-containsSender(id_derived, ctxt_previous) :- containsSender(id_stmt_return,ctxt), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt,_), argument(id_derived, id_block_next, index), blockChain(id_block_start_1,id_block_next), jump(id_transfer_jump_1,_,id_block_start_1,_), transferArgument(id_transfer_jump_1,ctxt_previous,_). // case where the jump returns to a block that is iteself called by another function
-containsSender(id_derived, "UCall") :- containsSender(id_stmt_return,ctxt), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt,_), argument(id_derived, id_block_next, index), blockChain(id_block_start_1,id_block_next), function(id_block_start_1,_). // case where the jump return to a block called by the user 
+containsSender(id_derived, ctxt_previous) :- containsSender(id_stmt_return,ctxt), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt,_), argument(id_derived, id_block_next, index), blockChain(id_block_start_1,id_block_next), jump(id_transfer_jump_1,_,id_block_start_1,_), transferArgument(id_transfer_jump_1,ctxt_previous,_), // case where the jump returns to a block that is iteself called by another function
+    !receivesTwoBranches(id_derived). // this is necessary for nested8.sol: if a value receives the output v of a function that ends with two branches, then v contains msg.sender only if the value returned in the two branches contains sender. As it would be too complicated to check exactly this, we remove variables v that receive a value from two branches from containsSender.
+
+containsSender(id_derived, "UCall") :- containsSender(id_stmt_return,ctxt), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt,_), argument(id_derived, id_block_next, index), blockChain(id_block_start_1,id_block_next), function(id_block_start_1,_), // case where the jump return to a block called by the user 
+    !receivesTwoBranches(id_derived).
+
+// containsSender(id_derived, ctxt) :- 
+//     jump(id_transfer_jump,_,id_block_start,id_block_next),
+//     return(id_transfer_return_1,id_block_return_1),
+//     blockChain(id_block_start, id_block_return_1),
+//     return(id_transfer_return_2,id_block_return_2),
+//     blockChain(id_block_start, id_block_return_2),
+//     id_transfer_return_1 != id_transfer_return_2,
+//     argument(id_derived, id_block_next, index),
+//     containsSender(id_stmt_return_1,ctxt),
+//     transferArgument(id_transfer_return_1,id_stmt_return_1,index),
+//     containsSender(id_stmt_return_2,ctxt),
+//     transferArgument(id_transfer_return_2,id_stmt_return_2,index).
 
 containsSender(id_derived, ctxt) :- derivesFrom(id_derived,id_taint), containsSender(id_taint, ctxt).
+
+receivesTwoBranches(id_stmt) :-
+    jump(id_transfer_jump,_,id_block_start,id_block_next),
+    return(id_transfer_return_1,id_block_return_1),
+    blockChain(id_block_start, id_block_return_1),
+    return(id_transfer_return_2,id_block_return_2),
+    blockChain(id_block_start, id_block_return_2),
+    id_transfer_return_1 != id_transfer_return_2,
+    argument(id_stmt, id_block_next, _).
 
 
 // Get potential guards

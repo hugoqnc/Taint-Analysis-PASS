@@ -153,6 +153,7 @@ msgSender(id) :- builtinVariable(id, "SENDER").
 .decl functionContainsBranch(function: Name)
 
 .decl potentialUntrustedVariablesForGuards(id_stmt: SSA, ctxt: SSA)
+.decl potentialUntrustedVariablesFromStateForGuards(id_derived: SSA, ctxt: SSA)
 .decl untrustedVariables(id_stmt: SSA, ctxt: SSA)
 .decl untrustedVariablesFromState(id_stmt: SSA, ctxt: SSA)
 
@@ -428,11 +429,10 @@ potentialUntrustedVariablesForGuards(id_derived, ctxt) :- // derivatives
         potentialUntrustedVariablesForGuards(id_stmt_return,ctxt_previous), potentialUntrustedVariablesForGuards(ctxt_previous,ctxt), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt_previous,_), argument(id_derived, id_block_next, index);
         derivesFrom(id_derived,id_taint), potentialUntrustedVariablesForGuards(id_taint, ctxt)
     ).
-
+potentialUntrustedVariablesForGuards(id_derived, ctxt) :- potentialUntrustedVariablesFromStateForGuards(id_derived, ctxt).
 
 // Get potential untrusted variables deriving from potentially untrusted state variables, to evaluate guards
-.decl potentiallUntrustedVariablesFromStateForGuards(id_derived: SSA, ctxt: SSA)
-potentiallUntrustedVariablesFromStateForGuards(id_derived, ctxt) :- // base case
+potentialUntrustedVariablesFromStateForGuards(id_derived, ctxt) :- // base case
     (
         (
             closestStoreToLoad(_, field, id_block_call_load, id_block_load, id_stmt_load, id_block_call_store, id_block_store, id_stmt_store),
@@ -453,26 +453,24 @@ potentiallUntrustedVariablesFromStateForGuards(id_derived, ctxt) :- // base case
         load(id_derived,field), blockStmt(id_block,id_derived), blockChain(id_block_start, id_block), jump(id_transfer_jump,_,id_block_start,_), transferArgument(id_transfer_jump,ctxt,_)
     ).
 
-potentiallUntrustedVariablesFromStateForGuards(id_derived, ctxt) :- // derivatives
+potentialUntrustedVariablesFromStateForGuards(id_derived, ctxt) :- // derivatives
     (
-        potentiallUntrustedVariablesFromStateForGuards(ctxt,_), transferArgument(id_transfer, ctxt, index), jump(id_transfer,_,id_block_to,_), argument(id_derived, id_block_to, index);
-        potentiallUntrustedVariablesFromStateForGuards(id_stmt_return,ctxt_previous), potentiallUntrustedVariablesFromStateForGuards(ctxt_previous,ctxt), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt_previous,_), argument(id_derived, id_block_next, index);
-        potentiallUntrustedVariablesFromStateForGuards(id_derived,"UCall"), blockStmt(id_block,id_derived), blockChain(id_block_start,id_block), jump(id_transfer_jump,_,id_block_start,_), transferArgument(id_transfer_jump,ctxt,_);
-        derivesFrom(id_derived,id_taint), potentiallUntrustedVariablesFromStateForGuards(id_taint, ctxt)
+        potentialUntrustedVariablesFromStateForGuards(ctxt,_), transferArgument(id_transfer, ctxt, index), jump(id_transfer,_,id_block_to,_), argument(id_derived, id_block_to, index);
+        potentialUntrustedVariablesFromStateForGuards(id_stmt_return,ctxt_previous), potentialUntrustedVariablesFromStateForGuards(ctxt_previous,ctxt), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt_previous,_), argument(id_derived, id_block_next, index);
+        potentialUntrustedVariablesFromStateForGuards(id_derived,"UCall"), blockStmt(id_block,id_derived), blockChain(id_block_start,id_block), jump(id_transfer_jump,_,id_block_start,_), transferArgument(id_transfer_jump,ctxt,_);
+        derivesFrom(id_derived,id_taint), potentialUntrustedVariablesFromStateForGuards(id_taint, ctxt)
     ).
 
 // return after a function call: the result value is untrusted because of a state variable
-potentiallUntrustedVariablesFromStateForGuards(id_derived, ctxt_previous) :- potentiallUntrustedVariablesFromStateForGuards(id_stmt_return,ctxt), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt,_), argument(id_derived, id_block_next, index), blockChain(id_block_start_1,id_block_next), jump(id_transfer_jump_1,_,id_block_start_1,_), transferArgument(id_transfer_jump_1,ctxt_previous,_). // case where the jump returns to a block that is iteself called by another function
-potentiallUntrustedVariablesFromStateForGuards(id_derived, "UCall") :- potentiallUntrustedVariablesFromStateForGuards(id_stmt_return,ctxt), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt,_), argument(id_derived, id_block_next, index), blockChain(id_block_start_1,id_block_next), function(id_block_start_1,_). // case where the jump return to a block called by the user 
-
-potentialUntrustedVariablesForGuards(id_derived, ctxt) :- potentiallUntrustedVariablesFromStateForGuards(id_derived, ctxt).
+potentialUntrustedVariablesFromStateForGuards(id_derived, ctxt_previous) :- potentialUntrustedVariablesFromStateForGuards(id_stmt_return,ctxt), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt,_), argument(id_derived, id_block_next, index), blockChain(id_block_start_1,id_block_next), jump(id_transfer_jump_1,_,id_block_start_1,_), transferArgument(id_transfer_jump_1,ctxt_previous,_). // case where the jump returns to a block that is iteself called by another function
+potentialUntrustedVariablesFromStateForGuards(id_derived, "UCall") :- potentialUntrustedVariablesFromStateForGuards(id_stmt_return,ctxt), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt,_), argument(id_derived, id_block_next, index), blockChain(id_block_start_1,id_block_next), function(id_block_start_1,_). // case where the jump return to a block called by the user 
 
 
 invalidGuards(id_stmt,ctxt) :- previousInvalidGuards(id_stmt,ctxt).
 invalidGuards(id_stmt,ctxt) :-
     potentialGuards(id_stmt,ctxt),
     (
-        untrustedVariables(id_stmt,ctxt);
+        //untrustedVariables(id_stmt,ctxt);
         potentialUntrustedVariablesForGuards(id_stmt,ctxt)
         //untrustedVariablesFromState(id_derived, ctxt)
     ).

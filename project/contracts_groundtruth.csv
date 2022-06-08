@@ -32,3 +32,13 @@ complexGuardCondition2; S22
 nested;
 multipleReturnVals; 
 multipleReturnVals2; S12
+manyParams; 
+manyParams2; S08
+nested2;
+complexGuardCondition3; S25
+nested3; 
+nested4; S06
+nested5; S11, S13
+nested6; S11
+nested7; 
+nested8; S12

@@ -12,7 +12,7 @@ def analyze(compile_output, contract_graph, contract_facts, *, output_dir):
     # TODO: Implement your analysis here.
 
     # Optional: Use Datalog (Souffle).
-    verbose = True
+    verbose = False
     # Run the Datalog analyzer
     facts_out = run(contract_facts, output_dir, verbose)
     # The output must be either 'Tainted' or 'Safe':

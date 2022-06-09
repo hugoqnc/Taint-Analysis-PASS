@@ -10,7 +10,7 @@ from analyze import run
 
 def get_tainted_sinks(contract_facts, output_dir):
     # Run the Datalog analyzer
-    verbose = True
+    verbose = False
     datalog_analyzer = Path(__file__).parent / "analyze.dl"
     facts_out = run(contract_facts, output_dir, verbose)
 

@@ -133,29 +133,28 @@ msgSender(id) :- builtinVariable(id, "SENDER").
 
 .decl blockChain(id_block_start: Block, id_block: Block) // contains blocks that are linked by jump/branch/goto: it corresponds to chain of blocks linked by arrows on the --visualize schema. id_block_start is a block that is a callable function.
 .decl blockFollows(id_block: Block, id_block_next: Block) // id_block_next follows id_block on the blockChain
-.decl receivesTwoBranches(id_stmt: SSA)
-.decl containsSender(id_stmt: SSA, ctxt: SSA)
+.decl receivesTwoBranches(id_stmt: SSA) // stmt on which a function returns through 2 different branches
+.decl containsSender(id_stmt: SSA, ctxt: SSA) // stmt that depends on msg.sender under a ctxt
 
-.decl potentialGuards(id_stmt: SSA, ctxt: SSA)
-.decl invalidGuards(id_stmt: SSA, ctxt: SSA)
+.decl potentialGuards(id_stmt: SSA, ctxt: SSA) // stmt that may be guards under a ctxt
+.decl invalidGuards(id_stmt: SSA, ctxt: SSA) // stmt that were initially potential guards, but proved invalid (untrusted)
 
-.decl potentialTrustedBlocks(id_block: Block, id_guard: SSA, ctxt: SSA)
-.decl untrustedBlocks(id_block: Block, ctxt: SSA)
+.decl potentialTrustedBlocks(id_block: Block, id_guard: SSA, ctxt: SSA) // blocks that are protected by a guard under a ctxt
 
-.decl jumpFromTo(id_block_from: Block, id_block_to: Block)
-.decl blocksBetween(id_block_start: Block, id_block_end: Block, id_block: Block)
-.decl storeSuccession(function: Name, id_block_call: Block, id_block_store: Block, id_stmt_store: SSA, field: Name, id_stmt_stored: SSA, counter: number)
-.decl followsRecursively(id_stmt_start: SSA, id_stmt_end: SSA)
-.decl distanceStoreToLoad(function: Name, field: Name,  id_block_call_load: Block, id_block_load: Block, id_stmt_load: SSA, id_block_call_store: Block, id_block_store: Block, id_stmt_store: SSA, distance: number)
-.decl closestStoreToLoad(function: Name, field: Name,  id_block_call_load: Block, id_block_load: Block, id_stmt_load: SSA, id_block_call_store: Block, id_block_store: Block, id_stmt_store: SSA)
-.decl lastStoreUntrusted(id_stmt_store: SSA, field: Name)
-.decl inevitableSelfDestruct(function: Name)
+.decl jumpFromTo(id_block_from: Block, id_block_to: Block) // we can go from id_block_from to id_block_to through a series of jumps
+.decl blocksBetween(id_block_start: Block, id_block_end: Block, id_block: Block) 
+.decl storeSuccession(function: Name, id_block_call: Block, id_block_store: Block, id_stmt_store: SSA, field: Name, id_stmt_stored: SSA, counter: number) // for a given function, it contains all the store statements that are called, and their relative position with `counter`
+.decl followsRecursively(id_stmt_start: SSA, id_stmt_end: SSA) // if we can go from id_stmt_start to id_stmt_end trhough a series of follows
+.decl distanceStoreToLoad(function: Name, field: Name,  id_block_call_load: Block, id_block_load: Block, id_stmt_load: SSA, id_block_call_store: Block, id_block_store: Block, id_stmt_store: SSA, distance: number) // distance from a load statement to store statements of the same state variable called in the same function
+.decl closestStoreToLoad(function: Name, field: Name,  id_block_call_load: Block, id_block_load: Block, id_stmt_load: SSA, id_block_call_store: Block, id_block_store: Block, id_stmt_store: SSA) // closest store statement to a load statement of the same state variable in the same function
+.decl lastStoreUntrusted(id_stmt_store: SSA, field: Name) // store statements that are at the end of a function call
+.decl inevitableSelfDestruct(function: Name) // functions that when called, inevitably finish with a selfDestruct statement
 .decl functionContainsBranch(function: Name)
 
-.decl potentialUntrustedVariablesForGuards(id_stmt: SSA, ctxt: SSA)
-.decl potentialUntrustedVariablesFromStateForGuards(id_derived: SSA, ctxt: SSA)
-.decl untrustedVariables(id_stmt: SSA, ctxt: SSA)
-.decl untrustedVariablesFromState(id_stmt: SSA, ctxt: SSA)
+.decl potentialUntrustedVariablesForGuards(id_stmt: SSA, ctxt: SSA) // potentially untrusted variables, without taking guards into acount, and without msg.sender and its derivatives
+.decl potentialUntrustedVariablesFromStateForGuards(id_derived: SSA, ctxt: SSA) // potentially untrusted variables from state variables, without taking guards into acount, and without msg.sender and its derivatives
+.decl untrustedVariables(id_stmt: SSA, ctxt: SSA) // untrusted variables for sure, taking into accounts potentialGuards
+.decl untrustedVariablesFromState(id_stmt: SSA, ctxt: SSA) // untrusted variables from state variables for sure, taking into accounts potentialGuards
 
 //_________________________________________________________
 // LOGIC IMPLEMENTATION
@@ -216,18 +215,6 @@ containsSender(id_derived, ctxt_previous) :- containsSender(id_stmt_return,ctxt)
 containsSender(id_derived, "UCall") :- containsSender(id_stmt_return,ctxt), transferArgument(id_transfer_return,id_stmt_return,index), return(id_transfer_return,id_block_return), blockChain(id_block_start, id_block_return), jump(id_transfer_jump,_,id_block_start,id_block_next), transferArgument(id_transfer_jump,ctxt,_), argument(id_derived, id_block_next, index), blockChain(id_block_start_1,id_block_next), function(id_block_start_1,_), // case where the jump return to a block called by the user 
     !receivesTwoBranches(id_derived).
 
-// containsSender(id_derived, ctxt) :- 
-//     jump(id_transfer_jump,_,id_block_start,id_block_next),
-//     return(id_transfer_return_1,id_block_return_1),
-//     blockChain(id_block_start, id_block_return_1),
-//     return(id_transfer_return_2,id_block_return_2),
-//     blockChain(id_block_start, id_block_return_2),
-//     id_transfer_return_1 != id_transfer_return_2,
-//     argument(id_derived, id_block_next, index),
-//     containsSender(id_stmt_return_1,ctxt),
-//     transferArgument(id_transfer_return_1,id_stmt_return_1,index),
-//     containsSender(id_stmt_return_2,ctxt),
-//     transferArgument(id_transfer_return_2,id_stmt_return_2,index).
 
 containsSender(id_derived, ctxt) :- derivesFrom(id_derived,id_taint), containsSender(id_taint, ctxt).
 
@@ -269,15 +256,7 @@ potentialTrustedBlocks(id_block, id_guard, ctxt) :- branch(_,_,id_block_guarded,
 potentialTrustedBlocks(id_block, id_guard, ctxt) :- jump(id_transfer_jump,id_block_guarded,id_block,_), potentialTrustedBlocks(id_block_guarded,id_guard,_), transferArgument(id_transfer_jump,ctxt,_), function(id_block,_).
 potentialTrustedBlocks(id_block, id_guard, ctxt) :- jump(_,id_block_guarded,_,id_block), potentialTrustedBlocks(id_block_guarded, id_guard,ctxt). // the block to which the jump returns is in the same blockchain as the block that initiated the jump, so it has the same context 
 
-// If a block called by another function has a guard (with a jump), then the block to which it returns is also guarded, under all possible contexts (in particular, under the context `UCall`)
-
-//TODO: I deleted the block below: it helps in some case, but are there some cases not covered?
-// potentialTrustedBlocks(id_block, id_guard, ctxt_previous) :-
-//     jump(id_transfer_jump,id_block_jump,id_block_guarded,id_block), potentialTrustedBlocks(id_block_guarded,id_guard,ctxt), blockChain(id_block_start,id_block_jump), jump(id_transfer_jump_previous,_,id_block_start,_), transferArgument(id_transfer_jump_previous,ctxt_previous,_),
-//     (
-//         transferArgument(id_transfer_jump,ctxt,_);
-//         !transferArgument(id_transfer_jump,_,_) // case where the function calls another function without arguments
-//     ).
+// If a block called by another function has a guard (with a jump), then the block to which it returns is also guarded, under under the context `UCall`
 potentialTrustedBlocks(id_block, id_guard, "UCall") :-
     jump(id_transfer_jump,_,id_block_guarded,id_block), potentialTrustedBlocks(id_block_guarded,id_guard,ctxt),
     (
@@ -288,11 +267,7 @@ potentialTrustedBlocks(id_block, id_guard, "UCall") :-
 // If a block is guarded, then the blocks before it in the same function should also be guarded, provided that all branches are guarded (there is no unguarded path)
 potentialTrustedBlocks(id_block,id_guard,ctxt) :-
     jump(id_transfer_jump,id_block,_,id_block_guarded), potentialTrustedBlocks(id_block_guarded,id_guard,ctxt).
-    // (
-    //     transferArgument(id_transfer_jump,ctxt,_);
-    //     !transferArgument(id_transfer_jump,_,_)
-    // ).
-    //TODO: not sure of the part with transferArgument in this case 
+
 
 potentialTrustedBlocks(id_block,id_guard,ctxt) :- branch(_,_,id_block,id_block_true,id_block_false,_), potentialTrustedBlocks(id_block_true,id_guard,ctxt), potentialTrustedBlocks(id_block_false,id_guard,ctxt). // both branches should be guarded
 potentialTrustedBlocks(id_block,cat(id_guard_true, cat(" ", id_guard_false)),ctxt) :- branch(_,_,id_block,id_block_true,id_block_false,_), potentialTrustedBlocks(id_block_true,id_guard_true,ctxt), potentialTrustedBlocks(id_block_false,id_guard_false,ctxt), id_guard_true!=id_guard_false, strlen(id_guard_true)=3, strlen(id_guard_false)=3. // each branch is guarded with a different guard (but under the same context). Then the upper block is guarded with a combination of the 2 guards (see 18.sol)
@@ -492,13 +467,8 @@ potentialUntrustedVariablesFromStateForGuards(id_derived, "UCall") :- potentialU
 
 
 invalidGuards(id_stmt,ctxt) :- previousInvalidGuards(id_stmt,ctxt).
-invalidGuards(id_stmt,ctxt) :-
-    potentialGuards(id_stmt,ctxt),
-    (
-        //untrustedVariables(id_stmt,ctxt);
-        potentialUntrustedVariablesForGuards(id_stmt,ctxt)
-        //untrustedVariablesFromState(id_derived, ctxt)
-    ).
+invalidGuards(id_stmt,ctxt) :- potentialGuards(id_stmt,ctxt), potentialUntrustedVariablesForGuards(id_stmt,ctxt).
+
 
 
 //_________________________________________________________
@@ -506,30 +476,27 @@ invalidGuards(id_stmt,ctxt) :-
 //_________________________________________________________
 
 .output tainted_sinks
-.output containsSender
-.output argument
-.output transferArgument
-.output jump
-.output branch
-.output return
-.output blockChain
-.output untrustedVariables
-.output untrustedVariablesFromState
-.output potentialUntrustedVariablesForGuards
-.output previousInvalidGuards
-.output potentialGuards
-.output potentialTrustedBlocks
-.output invalidGuards
-.output store
-.output storeSuccession
-.output distanceStoreToLoad
-.output closestStoreToLoad
-.output lastStoreUntrusted
-.output inevitableSelfDestruct
-// .output derivesFrom
-// .output derivesFrom
-// .output blockFollows
-.output selfdestruct
+// .output containsSender
+// .output argument
+// .output transferArgument
+// .output jump
+// .output branch
+// .output return
+// .output blockChain
+// .output untrustedVariables
+// .output untrustedVariablesFromState
+// .output potentialUntrustedVariablesForGuards
+// .output previousInvalidGuards
+// .output potentialGuards
+// .output potentialTrustedBlocks
+// .output invalidGuards
+// .output store
+// .output storeSuccession
+// .output distanceStoreToLoad
+// .output closestStoreToLoad
+// .output lastStoreUntrusted
+// .output inevitableSelfDestruct
+// .output selfdestruct
 
 // Export current untrusted variables, so they can be read in next round
 .output invalidGuards(IO=file, filename="../previousInvalidGuards.csv")
